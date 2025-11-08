@@ -1,0 +1,167 @@
+# ============================================================
+# Python / Backend
+# ============================================================
+
+# Virtual environments
+backend/.venv/
+backend/venv/
+backend/env/
+backend/ENV/
+backend/.python-version
+
+# Python cache
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/*.so
+backend/.Python
+
+# Testing
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+
+# Distribution / packaging
+backend/dist/
+backend/build/
+backend/*.egg-info/
+backend/.eggs/
+
+# Jupyter Notebook
+backend/.ipynb_checkpoints
+
+# Environment variables
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# IDE
+backend/.vscode/
+backend/.idea/
+backend/*.swp
+backend/*.swo
+backend/*~
+
+# Logs
+backend/*.log
+backend/logs/
+
+# Database files (if any local SQLite)
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Temporary files
+backend/temp/
+backend/tmp/
+backend/*.tmp
+
+
+# ============================================================
+# Node.js / Frontend
+# ============================================================
+
+# Dependencies
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+
+# Testing
+frontend/coverage/
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Production
+frontend/dist/
+
+# Environment variables
+frontend/.env
+frontend/.env*.local
+
+# Vercel
+frontend/.vercel
+
+# Debug
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# Misc
+frontend/.DS_Store
+frontend/*.pem
+
+# Cache
+frontend/.cache/
+frontend/.turbo/
+
+
+# ============================================================
+# OS & IDE (Root level)
+# ============================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+
+# ============================================================
+# Project-specific
+# ============================================================
+
+# Temporary test files
+test_*.py
+*_test_output.txt
+
+# Documentation builds
+docs/_build/
+
+# Credentials & secrets
+*.pem
+*.key
+*.cert
+credentials.json
+secrets.yaml
+
+# Backup files
+*.bak
+*.backup
+*.old
+

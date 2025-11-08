@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     oa_threshold: float = 0.90
     oa_base_url: str = "https://teamsero.tech/oa"
     
+    # Judge0 Configuration
+    judge0_url: str = "https://judge0-ce.p.rapidapi.com"
+    judge0_api_key: str = ""
+    judge0_rapidapi_host: str = "judge0-ce.p.rapidapi.com"
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
