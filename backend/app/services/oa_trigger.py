@@ -1,9 +1,8 @@
 from typing import Optional
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content
 from app.core.config import settings
 from app.db import snowflake_client
 from app.core.logger import logger
+from app.utils.email_utils import send_oa_email as send_oa_email_util
 
 
 # Threshold for sending OA (default 0.7 = 70% fit score)
@@ -28,17 +27,23 @@ def check_candidate_qualifies(candidate_id: int, threshold: Optional[float] = No
         logger.warning(f"Candidate {candidate_id} not found")
         return False
     
-    fit_score = candidate.get("fit_score")
+    fit_score = candidate.get("FIT_SCORE")
     if fit_score is None:
         logger.info(f"Candidate {candidate_id} has no fit score yet")
         return False
     
+    # Convert to float
+    fit_score = float(fit_score)
+    
+    # Normalize threshold to same scale as fit_score (both out of 100)
+    threshold_normalized = threshold * 100 if threshold <= 1.0 else threshold
+    
     # Check if candidate already has OA sent
-    if candidate.get("stage") == "oa_sent":
+    if candidate.get("STAGE") == "oa_sent":
         logger.info(f"Candidate {candidate_id} already has OA sent")
         return False
     
-    qualifies = fit_score >= threshold
+    qualifies = fit_score >= threshold_normalized
     logger.info(
         f"Candidate {candidate_id} fit_score: {fit_score}, "
         f"threshold: {threshold}, qualifies: {qualifies}"
@@ -77,98 +82,18 @@ def send_oa_email(
         candidate_email: Email address of the candidate
         candidate_name: Name of the candidate
         oa_link: Link to the OA platform
-        job_title: Optional job title for personalization
+        job_title: Optional job title for personalization (unused, kept for compatibility)
     
     Returns:
         True if email sent successfully, False otherwise
     """
-    if not settings.sendgrid_api_key:
-        logger.error("SendGrid API key not configured")
-        return False
-    
-    try:
-        sg = SendGridAPIClient(settings.sendgrid_api_key)
-        
-        from_email = Email(settings.sendgrid_from_email)
-        to_email = To(candidate_email)
-        
-        subject = f"Online Assessment Invitation - {job_title or 'TeamSero'}"
-        
-        # Email template
-        html_content = f"""
-        <html>
-            <body>
-                <h2>Congratulations, {candidate_name}!</h2>
-                <p>Thank you for your interest in joining our team. Based on your application, 
-                we'd like to invite you to complete an online assessment.</p>
-                
-                <p><strong>Next Steps:</strong></p>
-                <ol>
-                    <li>Click the link below to access your online assessment</li>
-                    <li>Complete the assessment at your convenience</li>
-                    <li>You'll hear from us shortly after completion</li>
-                </ol>
-                
-                <p>
-                    <a href="{oa_link}" style="background-color: #4CAF50; color: white; 
-                    padding: 14px 28px; text-decoration: none; display: inline-block; 
-                    border-radius: 4px; font-weight: bold;">
-                        Start Assessment
-                    </a>
-                </p>
-                
-                <p>Or copy and paste this link into your browser:<br>
-                <a href="{oa_link}">{oa_link}</a></p>
-                
-                <p>This link is unique to you and will expire in 7 days.</p>
-                
-                <p>Best regards,<br>The TeamSero Hiring Team</p>
-            </body>
-        </html>
-        """
-        
-        text_content = f"""
-        Congratulations, {candidate_name}!
-        
-        Thank you for your interest in joining our team. Based on your application, 
-        we'd like to invite you to complete an online assessment.
-        
-        Next Steps:
-        1. Click the link below to access your online assessment
-        2. Complete the assessment at your convenience
-        3. You'll hear from us shortly after completion
-        
-        Start your assessment here: {oa_link}
-        
-        This link is unique to you and will expire in 7 days.
-        
-        Best regards,
-        The TeamSero Hiring Team
-        """
-        
-        message = Mail(
-            from_email=from_email,
-            to_emails=to_email,
-            subject=subject,
-            html_content=Content("text/html", html_content),
-            plain_text_content=Content("text/plain", text_content)
-        )
-        
-        response = sg.send(message)
-        
-        if response.status_code in [200, 202]:
-            logger.info(f"OA email sent successfully to {candidate_email}")
-            return True
-        else:
-            logger.error(
-                f"Failed to send OA email to {candidate_email}. "
-                f"Status code: {response.status_code}"
-            )
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error sending OA email to {candidate_email}: {str(e)}")
-        return False
+    # Use the centralized email utility
+    return send_oa_email_util(
+        to_email=candidate_email,
+        candidate_name=candidate_name,
+        oa_link=oa_link,
+        company_name="SeroHire"
+    )
 
 
 def trigger_oa_for_candidate(
@@ -204,7 +129,7 @@ def trigger_oa_for_candidate(
                     "success": False,
                     "error": "Candidate does not meet threshold criteria",
                     "candidate_id": candidate_id,
-                    "fit_score": candidate.get("fit_score"),
+                    "fit_score": candidate.get("FIT_SCORE"),
                     "threshold": threshold or OA_THRESHOLD
                 }
         
@@ -220,18 +145,30 @@ def trigger_oa_for_candidate(
         
         # Get job info for personalization
         job = None
-        if candidate.get("job_id"):
-            job = snowflake_client.get_job(candidate["job_id"])
+        if candidate.get("JOB_ID"):
+            job = snowflake_client.get_job(candidate["JOB_ID"])
         
         # Generate OA link
         oa_link = generate_oa_link(candidate_id)
         
         # Send email
         email_sent = send_oa_email(
-            candidate_email=candidate["email"],
-            candidate_name=candidate["name"],
+            candidate_email=candidate["EMAIL"],
+            candidate_name=candidate["NAME"],
             oa_link=oa_link,
-            job_title=job.get("title") if job else None
+            job_title=job.get("TITLE") if job else None
+        )
+        
+        # Log email attempt
+        email_status = 'sent' if email_sent else 'failed'
+        error_msg = None if email_sent else "Failed to send via SendGrid"
+        
+        snowflake_client.log_oa_email_sent(
+            candidate_id=candidate_id,
+            email=candidate["EMAIL"],
+            oa_link=oa_link,
+            status=email_status,
+            error_message=error_msg
         )
         
         if not email_sent:

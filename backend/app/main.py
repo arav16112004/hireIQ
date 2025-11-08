@@ -5,15 +5,24 @@ from app.routes import candidates, interviews, jobs, system, oa, oa_admin
 from app.core.config import settings
 
 app = FastAPI(
-    title="TeamSero API",
+    title="SeroHire API",
     description="AI-Driven Hiring Platform with OA Assessment",
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware - Allow serohire.tech domains
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://serohire.tech",
+    "https://www.serohire.tech",
+    "https://app.serohire.tech",
+    "https://api.serohire.tech",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,8 +40,9 @@ app.include_router(oa_admin.router)
 @app.get("/")
 def root():
     return {
-        "message": "TeamSero API",
+        "message": "SeroHire API - AI-Driven Hiring Platform",
         "version": "1.0.0",
+        "domain": "serohire.tech",
         "docs": "/docs",
         "database": settings.snowflake_database
     }

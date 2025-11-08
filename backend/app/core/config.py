@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     sendgrid_from_email: str = "noreply@teamsero.tech"
     
     # OA Configuration
-    oa_threshold: float = 0.90
+    oa_threshold: float = 0.85
     oa_base_url: str = "https://teamsero.tech/oa"
     
     # Judge0 Configuration

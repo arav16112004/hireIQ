@@ -326,3 +326,84 @@ def get_final_interview(candidate_id: int) -> Optional[Dict[str, Any]]:
         cursor.close()
     return None
 
+
+# ============================================================
+# OA Email Logs Functions
+# ============================================================
+
+def log_oa_email_sent(
+    candidate_id: int,
+    email: str,
+    oa_link: str,
+    status: str = 'sent',
+    sendgrid_message_id: str = None,
+    error_message: str = None
+) -> Optional[int]:
+    """
+    Log an OA email sent to a candidate
+    
+    Args:
+        candidate_id: ID of the candidate
+        email: Email address
+        oa_link: OA invitation link
+        status: 'sent', 'failed', 'bounced'
+        sendgrid_message_id: SendGrid message ID
+        error_message: Error message if failed
+    
+    Returns:
+        Log ID if successful, None otherwise
+    """
+    query = """
+        INSERT INTO oa_email_logs 
+        (candidate_id, email, oa_link, status, sendgrid_message_id, error_message)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    return _execute_update(
+        query,
+        (candidate_id, email, oa_link, status, sendgrid_message_id, error_message)
+    )
+
+
+def get_email_logs_for_candidate(candidate_id: int) -> list:
+    """
+    Get all email logs for a candidate
+    
+    Args:
+        candidate_id: ID of the candidate
+    
+    Returns:
+        List of email log dictionaries
+    """
+    query = """
+        SELECT * FROM oa_email_logs
+        WHERE candidate_id = %s
+        ORDER BY sent_at DESC
+    """
+    return _execute_query(query, (candidate_id,))
+
+
+def update_email_log_status(
+    log_id: int,
+    status: str,
+    opened_at: str = None,
+    clicked_at: str = None
+) -> bool:
+    """
+    Update email log status (for tracking opens/clicks)
+    
+    Args:
+        log_id: Email log ID
+        status: New status
+        opened_at: Timestamp when email was opened
+        clicked_at: Timestamp when link was clicked
+    
+    Returns:
+        True if successful
+    """
+    query = """
+        UPDATE oa_email_logs
+        SET status = %s, opened_at = %s, clicked_at = %s
+        WHERE id = %s
+    """
+    return _execute_update(query, (status, opened_at, clicked_at, log_id)) is not None
+
