@@ -407,3 +407,290 @@ def update_email_log_status(
     """
     return _execute_update(query, (status, opened_at, clicked_at, log_id)) is not None
 
+
+# ============================================================
+# USERS TABLE FUNCTIONS (Authentication)
+# ============================================================
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a user by email address
+    
+    Args:
+        email: User's email address
+    
+    Returns:
+        User dictionary if found, None otherwise
+    """
+    query = "SELECT * FROM users WHERE email = %s"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (email,))
+        results = cursor.fetchall()
+        if results:
+            desc = cursor.description
+            cursor.close()
+            return _row_to_dict(desc, results[0])
+        cursor.close()
+    return None
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get a user by ID
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        User dictionary if found, None otherwise
+    """
+    query = "SELECT * FROM users WHERE id = %s"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (user_id,))
+        results = cursor.fetchall()
+        if results:
+            desc = cursor.description
+            cursor.close()
+            return _row_to_dict(desc, results[0])
+        cursor.close()
+    return None
+
+
+def create_user(email: str, password_hash: str, name: str, role: str = "candidate", company_name: Optional[str] = None) -> int:
+    """
+    Create a new user account
+    
+    Args:
+        email: User's email address
+        password_hash: Hashed password
+        name: User's full name
+        role: User role (candidate, recruiter, admin)
+        company_name: Company name (for recruiters)
+    
+    Returns:
+        User ID of newly created user
+    """
+    query = """
+        INSERT INTO users (email, password, name, role, company_name)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (email, password_hash, name, role, company_name))
+        cursor.execute("SELECT MAX(id) FROM users")
+        user_id = cursor.fetchone()[0]
+        cursor.close()
+        return user_id
+
+
+def update_user_last_login(user_id: int) -> bool:
+    """
+    Update user's last login timestamp
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        True if successful
+    """
+    query = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s"
+    rows_affected = _execute_update(query, (user_id,))
+    return rows_affected > 0
+
+
+def update_user_profile(user_id: int, name: Optional[str] = None, company_name: Optional[str] = None, phone: Optional[str] = None) -> bool:
+    """
+    Update user profile information
+    
+    Args:
+        user_id: User's ID
+        name: New name (optional)
+        company_name: New company name (optional)
+        phone: New phone number (optional)
+    
+    Returns:
+        True if successful
+    """
+    updates = {}
+    if name is not None:
+        updates['name'] = name
+    if company_name is not None:
+        updates['company_name'] = company_name
+    if phone is not None:
+        updates['phone'] = phone
+    
+    if not updates:
+        return False
+    
+    set_clause = ", ".join([f"{k} = %s" for k in updates.keys()])
+    query = f"UPDATE users SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = %s"
+    
+    rows_affected = _execute_update(query, (*updates.values(), user_id))
+    return rows_affected > 0
+
+
+def verify_user_email(user_id: int) -> bool:
+    """
+    Mark user's email as verified
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        True if successful
+    """
+    query = "UPDATE users SET email_verified = TRUE WHERE id = %s"
+    rows_affected = _execute_update(query, (user_id,))
+    return rows_affected > 0
+
+
+def deactivate_user(user_id: int) -> bool:
+    """
+    Deactivate a user account
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        True if successful
+    """
+    query = "UPDATE users SET is_active = FALSE WHERE id = %s"
+    rows_affected = _execute_update(query, (user_id,))
+    return rows_affected > 0
+
+
+def get_users_by_role(role: str) -> List[Dict[str, Any]]:
+    """
+    Get all users with a specific role
+    
+    Args:
+        role: User role (candidate, recruiter, admin)
+    
+    Returns:
+        List of user dictionaries
+    """
+    query = "SELECT * FROM users WHERE role = %s ORDER BY created_at DESC"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (role,))
+        results = cursor.fetchall()
+        if not results:
+            cursor.close()
+            return []
+        desc = cursor.description
+        cursor.close()
+        return [_row_to_dict(desc, row) for row in results]
+
+
+# ============================================================
+# CANDIDATE PROFILES TABLE FUNCTIONS
+# ============================================================
+
+def create_candidate_profile(user_id: int) -> int:
+    """
+    Create a candidate profile for a user
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        Profile ID
+    """
+    query = "INSERT INTO candidate_profiles (user_id) VALUES (%s)"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (user_id,))
+        cursor.execute("SELECT MAX(id) FROM candidate_profiles")
+        profile_id = cursor.fetchone()[0]
+        cursor.close()
+        return profile_id
+
+
+def get_candidate_profile_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get candidate profile by user ID
+    
+    Args:
+        user_id: User's ID
+    
+    Returns:
+        Profile dictionary if found, None otherwise
+    """
+    query = "SELECT * FROM candidate_profiles WHERE user_id = %s"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (user_id,))
+        results = cursor.fetchall()
+        if results:
+            desc = cursor.description
+            cursor.close()
+            return _row_to_dict(desc, results[0])
+        cursor.close()
+    return None
+
+
+def update_candidate_profile(
+    user_id: int,
+    resume_url: Optional[str] = None,
+    phone: Optional[str] = None,
+    location: Optional[str] = None,
+    linkedin_url: Optional[str] = None,
+    portfolio_url: Optional[str] = None,
+    skills: Optional[str] = None,
+    experience_years: Optional[int] = None,
+    education: Optional[str] = None,
+    bio: Optional[str] = None
+) -> bool:
+    """
+    Update candidate profile
+    
+    Args:
+        user_id: User's ID
+        resume_url: URL to resume
+        phone: Phone number
+        location: Location/city
+        linkedin_url: LinkedIn profile URL
+        portfolio_url: Portfolio website URL
+        skills: Comma-separated skills
+        experience_years: Years of experience
+        education: Education details
+        bio: Short bio
+    
+    Returns:
+        True if successful
+    """
+    updates = {}
+    if resume_url is not None:
+        updates['resume_url'] = resume_url
+    if phone is not None:
+        updates['phone'] = phone
+    if location is not None:
+        updates['location'] = location
+    if linkedin_url is not None:
+        updates['linkedin_url'] = linkedin_url
+    if portfolio_url is not None:
+        updates['portfolio_url'] = portfolio_url
+    if skills is not None:
+        updates['skills'] = skills
+    if experience_years is not None:
+        updates['experience_years'] = experience_years
+    if education is not None:
+        updates['education'] = education
+    if bio is not None:
+        updates['bio'] = bio
+    
+    if not updates:
+        return False
+    
+    # Check if profile is complete
+    if resume_url and phone and location:
+        updates['is_profile_complete'] = True
+    
+    set_clause = ", ".join([f"{k} = %s" for k in updates.keys()])
+    query = f"UPDATE candidate_profiles SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s"
+    
+    rows_affected = _execute_update(query, (*updates.values(), user_id))
+    return rows_affected > 0
+

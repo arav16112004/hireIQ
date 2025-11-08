@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     judge0_api_key: str = ""
     judge0_rapidapi_host: str = "judge0-ce.p.rapidapi.com"
     
+    # JWT Authentication
+    jwt_secret_key: str = "dev-secret-key-change-in-production-min-32-chars"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

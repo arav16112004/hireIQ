@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import candidates, interviews, jobs, system, oa, oa_admin
+from app.routes import candidates, interviews, jobs, system, oa, oa_admin, auth, candidate_profile
 from app.core.config import settings
 
 app = FastAPI(
@@ -29,6 +29,8 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(auth.router)
+app.include_router(candidate_profile.router)
 app.include_router(candidates.router)
 app.include_router(interviews.router)
 app.include_router(jobs.router)
