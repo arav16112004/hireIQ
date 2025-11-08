@@ -6,6 +6,9 @@ pydantic-settings>=2.0.0
 sendgrid>=6.10.0
 requests>=2.31.0
 
+# PDF Processing
+PyMuPDF>=1.23.0  # Provides 'fitz' module for PDF text extraction
+
 # Authentication
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4

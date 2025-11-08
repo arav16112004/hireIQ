@@ -2,7 +2,15 @@
 
 This file wires routes together. Run via: uvicorn backend.app.main:app --reload
 """
+import sys
 from pathlib import Path
+
+# Add backend directory to Python path to allow 'app' imports to work
+# This is needed when running from project root with 'backend.app.main:app'
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,8 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from app.routes import candidates, interviews, jobs, system, oa, oa_admin, auth, candidate_profile
 from app.core.config import settings
 
-# Get the backend directory (parent of app directory)
-BACKEND_DIR = Path(__file__).parent.parent
+# Get the static directory
 STATIC_DIR = BACKEND_DIR / "static"
 
 app = FastAPI(
@@ -73,3 +80,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+

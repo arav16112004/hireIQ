@@ -2,8 +2,11 @@ import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
-# Get the project root directory (where .env is located)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# Get the backend directory (where .env is located)
+# config.py is at: backend/app/core/config.py
+# So we go: parent (core) -> parent (app) -> parent (backend)
+BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = BACKEND_ROOT.parent  # Project root for reference
 
 
 class Settings(BaseSettings):
@@ -41,12 +44,12 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     
     class Config:
-        env_file = str(PROJECT_ROOT / ".env")  # Construct path to .env file
+        env_file = str(BACKEND_ROOT / ".env")  # .env is in backend directory
         case_sensitive = False
 
 
 # Debug the env file path
-env_path = str(PROJECT_ROOT / ".env")
+env_path = str(BACKEND_ROOT / ".env")
 print(f"[DEBUG] Loading .env from: {env_path}")
 print(f"[DEBUG] File exists: {os.path.exists(env_path)}")
 

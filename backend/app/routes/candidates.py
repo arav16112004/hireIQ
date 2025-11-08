@@ -5,7 +5,13 @@ from app.db import snowflake_client
 from app.services import oa_trigger
 from app.services.gemini_service import GeminiService
 from app.core.logger import logger
-import fitz  # PyMuPDF for PDF text extraction
+
+# Import PyMuPDF (fitz) for PDF text extraction
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+    logger.warning("PyMuPDF (fitz) not installed. PDF processing will not work. Install with: pip install PyMuPDF")
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 
@@ -62,6 +68,14 @@ async def ingest_candidate(
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     # --- 1️⃣ Read resume text from PDF ---
+    if fitz is None:
+        return CandidateResponse(
+            fit_score=0,
+            skills=[],
+            status="error",
+            error="PyMuPDF is not installed. Please install it with: pip install PyMuPDF"
+        )
+    
     try:
         pdf_bytes = await file.read()
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")

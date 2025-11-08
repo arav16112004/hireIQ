@@ -2,7 +2,7 @@ import snowflake.connector
 from typing import Optional, Dict, List, Any
 from contextlib import contextmanager
 
-from backend.app.core.config import settings
+from app.core.config import settings
 
 
 @contextmanager
@@ -81,7 +81,6 @@ def get_job(job_id: int) -> Optional[Dict[str, Any]]:
 def create_job(title: str, description: str, department: str) -> int:
     """Create a new job and return its ID"""
     query = "INSERT INTO jobs (title, description, department) VALUES (%s, %s, %s)"
-    query = "INSERT INTO jobs (title, description, department) VALUES (%s, %s, %s)"
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (title, description, department))
@@ -147,7 +146,6 @@ def create_candidate(name: str, email: str, resume_url: str, job_id: int) -> int
     """Create a new candidate and return its ID"""
     query = """
         INSERT INTO candidates (name, email, resume_url, job_id)
-        VALUES (%s, %s, %s, %s)
         VALUES (%s, %s, %s, %s)
     """
     with get_connection() as conn:
@@ -223,7 +221,6 @@ def update_oa_result(oa_id: int, score: float, status: str, completed_at: Option
 
 def get_oa_result(candidate_id: int) -> Optional[Dict[str, Any]]:
     """Get OA result for a candidate"""
-    query = "SELECT * FROM oa_results WHERE candidate_id = %s ORDER BY sent_at DESC LIMIT 1"
     query = "SELECT * FROM oa_results WHERE candidate_id = %s ORDER BY sent_at DESC LIMIT 1"
     with get_connection() as conn:
         cursor = conn.cursor()
