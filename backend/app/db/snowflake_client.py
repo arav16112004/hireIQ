@@ -2,7 +2,7 @@ import snowflake.connector
 from typing import Optional, Dict, List, Any
 from contextlib import contextmanager
 
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 @contextmanager
@@ -66,6 +66,7 @@ def _row_to_dict(cursor_description: tuple, row: tuple) -> Dict[str, Any]:
 def get_job(job_id: int) -> Optional[Dict[str, Any]]:
     """Get a job by ID"""
     query = "SELECT * FROM jobs WHERE id = %s"
+    query = "SELECT * FROM jobs WHERE id = %s"
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (job_id,))
@@ -79,6 +80,7 @@ def get_job(job_id: int) -> Optional[Dict[str, Any]]:
 
 def create_job(title: str, description: str, department: str) -> int:
     """Create a new job and return its ID"""
+    query = "INSERT INTO jobs (title, description, department) VALUES (%s, %s, %s)"
     query = "INSERT INTO jobs (title, description, department) VALUES (%s, %s, %s)"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -112,6 +114,7 @@ def get_all_jobs() -> List[Dict[str, Any]]:
 def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
     """Get a candidate by ID"""
     query = "SELECT * FROM candidates WHERE id = %s"
+    query = "SELECT * FROM candidates WHERE id = %s"
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (candidate_id,))
@@ -126,6 +129,7 @@ def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
 
 def get_candidate_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Get a candidate by email"""
+    query = "SELECT * FROM candidates WHERE email = %s"
     query = "SELECT * FROM candidates WHERE email = %s"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -144,6 +148,7 @@ def create_candidate(name: str, email: str, resume_url: str, job_id: int) -> int
     query = """
         INSERT INTO candidates (name, email, resume_url, job_id)
         VALUES (%s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s)
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -157,6 +162,7 @@ def create_candidate(name: str, email: str, resume_url: str, job_id: int) -> int
 def save_fit_score(candidate_id: int, fit_score: float, summary: Optional[str] = None) -> bool:
     """Update candidate's fit score and optionally stage"""
     query = "UPDATE candidates SET fit_score = %s WHERE id = %s"
+    query = "UPDATE candidates SET fit_score = %s WHERE id = %s"
     rows_affected = _execute_update(query, (fit_score, candidate_id))
     return rows_affected > 0
 
@@ -164,12 +170,14 @@ def save_fit_score(candidate_id: int, fit_score: float, summary: Optional[str] =
 def update_candidate_stage(candidate_id: int, stage: str) -> bool:
     """Update candidate's stage in the pipeline"""
     query = "UPDATE candidates SET stage = %s WHERE id = %s"
+    query = "UPDATE candidates SET stage = %s WHERE id = %s"
     rows_affected = _execute_update(query, (stage, candidate_id))
     return rows_affected > 0
 
 
 def get_candidates_by_job(job_id: int) -> List[Dict[str, Any]]:
     """Get all candidates for a specific job"""
+    query = "SELECT * FROM candidates WHERE job_id = %s ORDER BY created_at DESC"
     query = "SELECT * FROM candidates WHERE job_id = %s ORDER BY created_at DESC"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -190,6 +198,7 @@ def get_candidates_by_job(job_id: int) -> List[Dict[str, Any]]:
 def create_oa_result(candidate_id: int, status: str = "pending") -> int:
     """Create a new OA result entry"""
     query = "INSERT INTO oa_results (candidate_id, status) VALUES (%s, %s)"
+    query = "INSERT INTO oa_results (candidate_id, status) VALUES (%s, %s)"
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (candidate_id, status))
@@ -205,6 +214,8 @@ def update_oa_result(oa_id: int, score: float, status: str, completed_at: Option
         UPDATE oa_results 
         SET score = %s, status = %s, completed_at = %s
         WHERE id = %s
+        SET score = %s, status = %s, completed_at = %s
+        WHERE id = %s
     """
     rows_affected = _execute_update(query, (score, status, completed_at, oa_id))
     return rows_affected > 0
@@ -212,6 +223,7 @@ def update_oa_result(oa_id: int, score: float, status: str, completed_at: Option
 
 def get_oa_result(candidate_id: int) -> Optional[Dict[str, Any]]:
     """Get OA result for a candidate"""
+    query = "SELECT * FROM oa_results WHERE candidate_id = %s ORDER BY sent_at DESC LIMIT 1"
     query = "SELECT * FROM oa_results WHERE candidate_id = %s ORDER BY sent_at DESC LIMIT 1"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -240,6 +252,7 @@ def create_interview(
     query = """
         INSERT INTO interviews (candidate_id, transcript, engagement_score, ai_score, notes)
         VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s)
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -252,6 +265,7 @@ def create_interview(
 
 def get_interview(interview_id: int) -> Optional[Dict[str, Any]]:
     """Get an interview by ID"""
+    query = "SELECT * FROM interviews WHERE id = %s"
     query = "SELECT * FROM interviews WHERE id = %s"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -267,6 +281,7 @@ def get_interview(interview_id: int) -> Optional[Dict[str, Any]]:
 
 def get_interviews_by_candidate(candidate_id: int) -> List[Dict[str, Any]]:
     """Get all interviews for a candidate"""
+    query = "SELECT * FROM interviews WHERE candidate_id = %s ORDER BY created_at DESC"
     query = "SELECT * FROM interviews WHERE candidate_id = %s ORDER BY created_at DESC"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -295,6 +310,7 @@ def create_final_interview(
     query = """
         INSERT INTO final_interviews (candidate_id, recruiter_name, recruiter_email, scheduled_date, decision)
         VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s)
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -308,12 +324,14 @@ def create_final_interview(
 def update_final_interview(interview_id: int, decision: str, feedback: Optional[str] = None) -> bool:
     """Update final interview decision and feedback"""
     query = "UPDATE final_interviews SET decision = %s, feedback = %s WHERE id = %s"
+    query = "UPDATE final_interviews SET decision = %s, feedback = %s WHERE id = %s"
     rows_affected = _execute_update(query, (decision, feedback, interview_id))
     return rows_affected > 0
 
 
 def get_final_interview(candidate_id: int) -> Optional[Dict[str, Any]]:
     """Get final interview for a candidate"""
+    query = "SELECT * FROM final_interviews WHERE candidate_id = %s ORDER BY created_at DESC LIMIT 1"
     query = "SELECT * FROM final_interviews WHERE candidate_id = %s ORDER BY created_at DESC LIMIT 1"
     with get_connection() as conn:
         cursor = conn.cursor()
