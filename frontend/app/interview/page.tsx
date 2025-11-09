@@ -244,61 +244,51 @@ export default function InterviewPage() {
   };
 
   const speakQuestion = (questionText: string) => {
-    console.log('🎤 Attempting to speak question:', questionText);
+    console.log('🎤 Sending question to Ava:', questionText);
     
     try {
-      // D-ID agent should automatically display in the container
-      // The agent is conversational and will speak when given input
-      // Try to find the agent iframe or send a message to it
       const agentContainer = document.getElementById('ava-agent');
       
       if (agentContainer) {
-        // Check if agent iframe is loaded
         const iframe = agentContainer.querySelector('iframe');
         if (iframe) {
-          console.log('✅ D-ID agent iframe found');
-          // Try to send message to agent (if supported)
+          console.log('✅ Ava (D-ID agent) iframe found, sending question...');
+          // Send question to Ava via postMessage
+          // D-ID agent accepts various message formats
           try {
+            // Format 1: Direct message
             iframe.contentWindow?.postMessage({
-              type: 'speak',
+              type: 'agent_message',
+              message: questionText,
+              action: 'speak'
+            }, '*');
+            
+            // Format 2: Text input
+            iframe.contentWindow?.postMessage({
+              type: 'text',
               text: questionText
             }, '*');
+            
+            // Format 3: User message (Ava will respond)
+            iframe.contentWindow?.postMessage({
+              type: 'user_message',
+              message: questionText
+            }, '*');
+            
+            console.log('✅ Question sent to Ava');
           } catch (e) {
-            console.log('Could not send message to agent iframe:', e);
+            console.log('⚠️ Could not send message to Ava iframe:', e);
           }
         } else {
-          console.log('⏳ Waiting for D-ID agent iframe to load...');
-        }
-        
-        // Also try to use browser TTS as fallback/immediate feedback
-        if ('speechSynthesis' in window) {
-          // Stop any ongoing speech
-          window.speechSynthesis.cancel();
-          
-          const utterance = new SpeechSynthesisUtterance(questionText);
-          utterance.rate = 0.9;
-          utterance.pitch = 1.0;
-          utterance.volume = 1.0;
-          
-          utterance.onstart = () => {
-            console.log('🔊 Browser TTS started speaking');
-          };
-          
-          utterance.onend = () => {
-            console.log('✅ Browser TTS finished speaking');
-          };
-          
-          utterance.onerror = (error) => {
-            console.error('❌ Browser TTS error:', error);
-          };
-          
-          window.speechSynthesis.speak(utterance);
+          console.log('⏳ Waiting for Ava (D-ID agent) to load...');
+          // Retry after a delay
+          setTimeout(() => speakQuestion(questionText), 1000);
         }
       } else {
         console.error('❌ Agent container not found');
       }
     } catch (error) {
-      console.error('❌ Error in speakQuestion:', error);
+      console.error('❌ Error sending question to Ava:', error);
     }
   };
 
