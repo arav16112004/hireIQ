@@ -15,7 +15,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.routes import candidates, interviews, jobs, system, oa, oa_admin, auth, candidate_profile
+from dotenv import load_dotenv
+load_dotenv()
+
+from app.routes import candidates, interviews, jobs, system, oa, oa_admin, auth, candidate_profile, recruiter
 from app.core.config import settings
 
 # Get the static directory
@@ -27,10 +30,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware - Allow serohire.tech domains
+# CORS middleware - Allow local development and production domains
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
     "https://serohire.tech",
     "https://www.serohire.tech",
     "https://app.serohire.tech",
@@ -43,6 +48,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Mount static directory for serving generated audio/video assets
@@ -58,6 +64,7 @@ app.include_router(jobs.router)
 app.include_router(system.router)
 app.include_router(oa.router)
 app.include_router(oa_admin.router)
+app.include_router(recruiter.router)
 
 
 @app.get("/")
@@ -81,3 +88,11 @@ if __name__ == "__main__":
 
     uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

@@ -74,19 +74,17 @@ def grade_submission(submission_id: int) -> Dict[str, Any]:
         # Score is proportional to passed tests
         score = (passed_tests / total_tests * question_points) if total_tests > 0 else 0
         
-        # Get execution metrics
-        avg_time = sum(
-            tr.get('time', 0) for tr in results['test_results'] if tr.get('time')
-        ) / len(results['test_results']) if results['test_results'] else 0
+        # Get execution metrics (ensure all values are floats)
+        times = [float(tr.get('time', 0)) for tr in results['test_results'] if tr.get('time') is not None]
+        avg_time = sum(times) / len(times) if times else 0
         
-        avg_memory = sum(
-            tr.get('memory', 0) for tr in results['test_results'] if tr.get('memory')
-        ) / len(results['test_results']) if results['test_results'] else 0
+        memories = [float(tr.get('memory', 0)) for tr in results['test_results'] if tr.get('memory') is not None]
+        avg_memory = sum(memories) / len(memories) if memories else 0
         
-        # Collect outputs
-        stdout_list = [tr.get('stdout', '') for tr in results['test_results']]
-        stderr_list = [tr.get('stderr', '') for tr in results['test_results']]
-        compile_output = results['test_results'][0].get('compile_output', '') if results['test_results'] else ''
+        # Collect outputs (ensure all are strings)
+        stdout_list = [str(tr.get('stdout', '')) for tr in results['test_results']]
+        stderr_list = [str(tr.get('stderr', '')) for tr in results['test_results']]
+        compile_output = str(results['test_results'][0].get('compile_output', '')) if results['test_results'] else ''
         
         # Update submission with results
         oa_client.update_submission(
@@ -121,7 +119,7 @@ def grade_submission(submission_id: int) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        logger.error(f"Error grading submission {submission_id}: {str(e)}")
+        logger.error(f"Error grading submission {submission_id}: {str(e)}", exc_info=True)
         # Update submission with error status
         oa_client.update_submission(
             submission_id=submission_id,
@@ -200,13 +198,14 @@ def calculate_session_score(session_id: int) -> Dict[str, Any]:
         }
 
 
-def complete_oa_session_with_results(session_id: int) -> Dict[str, Any]:
+def complete_oa_session_with_results(session_id: int, max_cheating_score: Optional[float] = None) -> Dict[str, Any]:
     """
     Complete an OA session and update results to database
     Also updates the candidate's status in the main candidates table
     
     Args:
         session_id: ID of the OA session to complete
+        max_cheating_score: Highest integrity/cheating score recorded during the session
     
     Returns:
         Dictionary with completion status and results
@@ -235,8 +234,54 @@ def complete_oa_session_with_results(session_id: int) -> Dict[str, Any]:
         oa_client.complete_oa_session(
             session_id=session_id,
             score=total_score,
-            max_score=max_score
+            max_score=max_score,
+            max_cheating_score=max_cheating_score
         )
+        
+        if max_cheating_score is not None:
+            logger.info(
+                f"✅ OA session {session_id} completed with max_cheating_score: {max_cheating_score}"
+            )
+        else:
+            logger.warning(
+                f"⚠️ OA session {session_id} completed without max_cheating_score (was None)"
+            )
+        
+        # Update OA_RESULTS table
+        oa_result = snowflake_client.get_oa_result(candidate_id)
+        if oa_result:
+            logger.info(f"📝 Updating existing OA result {oa_result['ID']} for candidate {candidate_id} with integrity_score: {max_cheating_score}")
+            # Update existing OA result
+            success = snowflake_client.update_oa_result(
+                oa_id=oa_result['ID'],
+                score=total_score,
+                status='completed',
+                completed_at=None,  # Will use CURRENT_TIMESTAMP
+                integrity_score=max_cheating_score  # Save integrity score to oa_results table
+            )
+            if success:
+                logger.info(f"✅ Successfully updated OA result {oa_result['ID']} with integrity_score: {max_cheating_score}")
+            else:
+                logger.error(f"❌ Failed to update OA result {oa_result['ID']}")
+        else:
+            logger.info(f"📝 Creating new OA result for candidate {candidate_id}")
+            # Create new OA result if doesn't exist
+            oa_result_id = snowflake_client.create_oa_result(
+                candidate_id=candidate_id,
+                status='completed'
+            )
+            logger.info(f"✅ Created OA result {oa_result_id}, now updating with integrity_score: {max_cheating_score}")
+            success = snowflake_client.update_oa_result(
+                oa_id=oa_result_id,
+                score=total_score,
+                status='completed',
+                completed_at=None,
+                integrity_score=max_cheating_score  # Save integrity score to oa_results table
+            )
+            if success:
+                logger.info(f"✅ Successfully updated new OA result {oa_result_id} with integrity_score: {max_cheating_score}")
+            else:
+                logger.error(f"❌ Failed to update new OA result {oa_result_id}")
         
         # Update candidate stage based on OA performance
         # You can customize these thresholds

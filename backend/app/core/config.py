@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     
     # OA Configuration
     oa_threshold: float = 0.85
-    oa_base_url: str = "https://teamsero.tech/oa"
+    oa_base_url: str = "http://localhost:3000"  # Just the domain, route will add /oa/
     
     # Judge0 Configuration
     judge0_url: str = "https://judge0-ce.p.rapidapi.com"
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # JWT Authentication
     jwt_secret_key: str = "dev-secret-key-change-in-production-min-32-chars"
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 30
+    jwt_access_token_expire_minutes: int = 1440  # 24 hours
     
     class Config:
         env_file = str(BACKEND_ROOT / ".env")  # .env is in backend directory

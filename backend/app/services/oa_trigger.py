@@ -1,12 +1,16 @@
 from typing import Optional
 from app.core.config import settings
-from app.db import snowflake_client
+from app.db import snowflake_client, oa_client
 from app.core.logger import logger
 from app.utils.email_utils import send_oa_email as send_oa_email_util
 
 
 # Threshold for sending OA (default 0.7 = 70% fit score)
 OA_THRESHOLD = settings.oa_threshold
+
+# Default OA configuration
+DEFAULT_OA_DURATION = 60  # minutes
+DEFAULT_OA_QUESTIONS = [1, 2]  # Default question IDs (make sure these exist in DB)
 
 
 def check_candidate_qualifies(candidate_id: int, threshold: Optional[float] = None) -> bool:
@@ -51,22 +55,60 @@ def check_candidate_qualifies(candidate_id: int, threshold: Optional[float] = No
     return qualifies
 
 
-def generate_oa_link(candidate_id: int, base_url: Optional[str] = None) -> str:
+def create_oa_session_for_candidate(
+    candidate_id: int,
+    question_ids: Optional[list] = None,
+    duration_minutes: int = DEFAULT_OA_DURATION
+) -> int:
     """
-    Generate a unique OA link for a candidate.
+    Create an OA session for a candidate
     
     Args:
+        candidate_id: ID of the candidate
+        question_ids: List of question IDs (defaults to DEFAULT_OA_QUESTIONS)
+        duration_minutes: Duration in minutes
+        
+    Returns:
+        session_id: Created session ID
+    """
+    question_ids = question_ids or DEFAULT_OA_QUESTIONS
+    
+    # Create OA session
+    session_id = oa_client.create_oa_session(
+        candidate_id=candidate_id,
+        question_ids=question_ids,
+        duration_minutes=duration_minutes
+    )
+    
+    logger.info(f"Created OA session {session_id} for candidate {candidate_id}")
+    return session_id
+
+
+def generate_oa_link(
+    session_id: int,
+    candidate_id: int,
+    base_url: Optional[str] = None
+) -> str:
+    """
+    Generate a unique OA link for a candidate session.
+    
+    Args:
+        session_id: OA session ID
         candidate_id: ID of the candidate
         base_url: Base URL for the OA platform (defaults to config)
     
     Returns:
         OA link URL
     """
-    base_url = base_url or settings.oa_base_url
-    # Generate secure token (in production, store this token in DB for validation)
-    import secrets
-    token = secrets.token_urlsafe(32)
-    return f"{base_url}?candidate_id={candidate_id}&token={token}"
+    # Import here to avoid circular dependency
+    from app.routes.oa import get_oa_link
+    
+    base_url = base_url or settings.oa_base_url or "http://localhost:3000"
+    # Ensure base_url doesn't have /oa/ at the end (get_oa_link will add it)
+    base_url = base_url.rstrip('/')
+    if base_url.endswith('/oa'):
+        base_url = base_url[:-3]
+    return get_oa_link(session_id, candidate_id, base_url)
 
 
 def send_oa_email(
@@ -99,7 +141,9 @@ def send_oa_email(
 def trigger_oa_for_candidate(
     candidate_id: int,
     threshold: Optional[float] = None,
-    force: bool = False
+    force: bool = False,
+    question_ids: Optional[list] = None,
+    duration_minutes: int = DEFAULT_OA_DURATION
 ) -> dict:
     """
     Main function to trigger OA invitation for a candidate.
@@ -108,6 +152,8 @@ def trigger_oa_for_candidate(
         candidate_id: ID of the candidate
         threshold: Fit score threshold (optional)
         force: If True, send OA regardless of threshold (for testing)
+        question_ids: List of question IDs for the OA (optional)
+        duration_minutes: OA duration in minutes
     
     Returns:
         Dictionary with status and details
@@ -133,23 +179,23 @@ def trigger_oa_for_candidate(
                     "threshold": threshold or OA_THRESHOLD
                 }
         
-        # Check if OA already sent
-        existing_oa = snowflake_client.get_oa_result(candidate_id)
-        if existing_oa and existing_oa.get("status") == "pending":
-            return {
-                "success": False,
-                "error": "OA already sent to this candidate",
-                "candidate_id": candidate_id,
-                "oa_id": existing_oa.get("id")
-            }
+        # Check if OA session already exists
+        # Note: We'll allow creating new sessions if previous ones expired/completed
         
         # Get job info for personalization
         job = None
         if candidate.get("JOB_ID"):
             job = snowflake_client.get_job(candidate["JOB_ID"])
         
-        # Generate OA link
-        oa_link = generate_oa_link(candidate_id)
+        # Create OA session
+        session_id = create_oa_session_for_candidate(
+            candidate_id=candidate_id,
+            question_ids=question_ids,
+            duration_minutes=duration_minutes
+        )
+        
+        # Generate OA link with token
+        oa_link = generate_oa_link(session_id, candidate_id)
         
         # Send email
         email_sent = send_oa_email(
@@ -175,24 +221,22 @@ def trigger_oa_for_candidate(
             return {
                 "success": False,
                 "error": "Failed to send OA email",
-                "candidate_id": candidate_id
+                "candidate_id": candidate_id,
+                "session_id": session_id
             }
-        
-        # Create OA result record
-        oa_id = snowflake_client.create_oa_result(candidate_id, status="pending")
         
         # Update candidate stage
         snowflake_client.update_candidate_stage(candidate_id, "oa_sent")
         
         logger.info(
             f"OA triggered successfully for candidate {candidate_id}. "
-            f"OA ID: {oa_id}, Link: {oa_link}"
+            f"Session ID: {session_id}, Link: {oa_link}"
         )
         
         return {
             "success": True,
             "candidate_id": candidate_id,
-            "oa_id": oa_id,
+            "session_id": session_id,
             "oa_link": oa_link,
             "email_sent": True
         }

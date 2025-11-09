@@ -212,10 +212,88 @@ class Judge0Client:
 judge0_client = Judge0Client()
 
 
+def wrap_code_with_test_harness(
+    source_code: str,
+    language: str,
+    test_input: str,
+    function_name: str = None
+) -> str:
+    """
+    Wrap user's function code with test harness that calls it and prints result
+    
+    Args:
+        source_code: User's function definition
+        language: Programming language
+        test_input: Input data as string (comma-separated lines)
+        function_name: Name of function to call
+    
+    Returns:
+        Complete code ready for execution
+    """
+    if language.lower() == "python":
+        # Extract function name if not provided
+        if not function_name:
+            import re
+            match = re.search(r'def\s+(\w+)\s*\(', source_code)
+            if match:
+                function_name = match.group(1)
+            else:
+                # If no function found, just return original code
+                return source_code
+        
+        # Parse input lines
+        input_lines = test_input.strip().split('\n')
+        
+        # Build the wrapper code
+        wrapper = f"{source_code}\n\n"
+        wrapper += "# Test harness - DO NOT MODIFY\n"
+        wrapper += "import json\n"
+        
+        # Parse each input line and build function arguments
+        args = []
+        for line in input_lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Try to parse as JSON first (for arrays, objects)
+            try:
+                parsed = json.loads(line)
+                args.append(repr(parsed))
+            except:
+                # If not JSON, treat as string or number
+                if line.isdigit() or (line.startswith('-') and line[1:].isdigit()):
+                    args.append(line)
+                elif line.replace('.', '', 1).isdigit():
+                    args.append(line)
+                else:
+                    args.append(repr(line))
+        
+        # Call function and print result
+        if args:
+            wrapper += f"result = {function_name}({', '.join(args)})\n"
+        else:
+            wrapper += f"result = {function_name}()\n"
+        
+        # Format output to match expected format (comma-separated without brackets for lists)
+        wrapper += "if isinstance(result, list):\n"
+        wrapper += "    print(','.join(str(x) for x in result))\n"
+        wrapper += "elif isinstance(result, bool):\n"
+        wrapper += "    print('true' if result else 'false')\n"
+        wrapper += "else:\n"
+        wrapper += "    print(result)\n"
+        
+        return wrapper
+    
+    # For other languages, return as-is for now
+    # TODO: Add support for JavaScript, Java, C++, etc.
+    return source_code
+
+
 def run_test_cases(
     source_code: str,
     language: str,
     test_cases: List[Dict[str, str]],
+    function_name: str = None,
     time_limit: float = 5.0,
     memory_limit: int = 128000
 ) -> Dict[str, Any]:
@@ -226,6 +304,7 @@ def run_test_cases(
         source_code: The code to test
         language: Programming language
         test_cases: List of test cases with 'input' and 'expected_output'
+        function_name: Name of the function to test (for wrapping)
         time_limit: CPU time limit per test case
         memory_limit: Memory limit in KB
     
@@ -242,10 +321,18 @@ def run_test_cases(
     
     for i, test_case in enumerate(test_cases):
         try:
-            result = judge0_client.execute_code(
+            # Wrap the user's code with test harness
+            wrapped_code = wrap_code_with_test_harness(
                 source_code=source_code,
                 language=language,
-                stdin=test_case.get("input", ""),
+                test_input=test_case.get("input", ""),
+                function_name=function_name
+            )
+            
+            result = judge0_client.execute_code(
+                source_code=wrapped_code,
+                language=language,
+                stdin="",  # Input is now embedded in the wrapped code
                 expected_output=test_case.get("expected_output", ""),
                 time_limit=time_limit,
                 memory_limit=memory_limit
@@ -263,7 +350,9 @@ def run_test_cases(
                 "stderr": result.get("stderr", ""),
                 "time": result.get("time", 0),
                 "memory": result.get("memory", 0),
-                "compile_output": result.get("compile_output", "")
+                "compile_output": result.get("compile_output", ""),
+                "input": test_case.get("input", ""),
+                "expected_output": test_case.get("expected_output", "")
             }
             
             if status_id == 3:

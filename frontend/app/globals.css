@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Optional global styling */
+html {
+  background-color: #fbf4f4;
+}
+
+body {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Neon / Glow helpers */
+@layer components {
+  .neon-card {
+    background-color: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgb(30, 41, 59);
+    border-radius: 0.75rem;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 0 40px rgba(56, 189, 248, 0.12);
+  }
+  .neon-button {
+    background: linear-gradient(to right, rgb(14, 165, 233), rgb(37, 99, 235));
+    color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(56, 189, 248, 0.25), inset 0 0 8px rgba(56, 189, 248, 0.3);
+    outline: 1px solid rgba(56, 189, 248, 0.4);
+    outline-offset: 2px;
+    transition: all 0.3s;
+  }
+  .neon-button:hover {
+    background: linear-gradient(to right, rgb(56, 189, 248), rgb(59, 130, 246));
+  }
+  .neon-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(30, 58, 138);
+    background-color: rgba(12, 74, 110, 0.3);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgb(125, 211, 252);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+  }
+  .neon-divider {
+    background-color: rgb(30, 41, 59);
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.18);
+  }
+  .neon-text {
+    text-shadow: 0 0 8px rgba(56, 189, 248, 0.35);
+  }
+}
+

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, UploadFile, Form, HTTPException, File
+from fastapi import APIRouter, UploadFile, Form, HTTPException, File, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from app.db import snowflake_client
 from app.services import oa_trigger
 from app.services.gemini_service import GeminiService
 from app.core.logger import logger
+from app.utils.auth_utils import get_current_user
 
 # Import PyMuPDF (fitz) for PDF text extraction
 try:
@@ -14,6 +15,73 @@ except ImportError:
     logger.warning("PyMuPDF (fitz) not installed. PDF processing will not work. Install with: pip install PyMuPDF")
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
+
+
+@router.get("/")
+def get_all_candidates(
+    job_id: Optional[int] = None,
+    stage: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all candidates, optionally filtered by job_id and/or stage"""
+    # Normalize role to lowercase for comparison
+    user_role = current_user.get("role", "").lower() if current_user.get("role") else ""
+    
+    # If recruiter, only show candidates from their company
+    if user_role in ["recruiter", "admin"]:
+        user_data = snowflake_client.get_user_by_id(current_user.get("user_id"))
+        if user_data:
+            company_name = user_data.get("COMPANY_NAME") or user_data.get("company_name")
+            if company_name:
+                candidates = snowflake_client.get_candidates_by_company(company_name)
+                # Apply job_id and stage filters if provided
+                if job_id:
+                    candidates = [c for c in candidates if c.get("JOB_ID") == job_id or c.get("job_id") == job_id]
+                if stage:
+                    candidates = [c for c in candidates if (c.get("STAGE") or c.get("stage", "")).lower() == stage.lower()]
+                return {"candidates": candidates}
+    
+    # For candidates or if no company found, return all candidates (or empty)
+    candidates = snowflake_client.get_all_candidates(job_id=job_id, stage=stage)
+    return {"candidates": candidates}
+
+
+@router.delete("/{candidate_id}")
+def delete_candidate(candidate_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete a candidate (recruiter/admin only)"""
+    # Normalize role to lowercase for comparison
+    user_role = current_user.get("role", "").lower() if current_user.get("role") else ""
+    
+    # Check if user is recruiter or admin
+    if user_role not in ["recruiter", "admin"]:
+        raise HTTPException(status_code=403, detail="Only recruiters can delete candidates")
+    
+    # Verify candidate exists and belongs to recruiter's company (if recruiter)
+    if user_role == "recruiter":
+        candidate = snowflake_client.get_all_candidates()
+        candidate_data = next((c for c in candidate if (c.get("ID") or c.get("id")) == candidate_id), None)
+        if not candidate_data:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        # Check if candidate belongs to recruiter's company
+        user_data = snowflake_client.get_user_by_id(current_user.get("user_id"))
+        if user_data:
+            company_name = user_data.get("COMPANY_NAME") or user_data.get("company_name")
+            if company_name:
+                # Get job for this candidate
+                job_id = candidate_data.get("JOB_ID") or candidate_data.get("job_id")
+                if job_id:
+                    job = snowflake_client.get_job(job_id)
+                    if job:
+                        job_company = job.get("COMPANY_NAME") or job.get("company_name")
+                        if job_company != company_name:
+                            raise HTTPException(status_code=403, detail="Cannot delete candidate from another company")
+    
+    success = snowflake_client.delete_candidate(candidate_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to delete candidate")
+    
+    return {"message": "Candidate deleted successfully"}
 
 
 class SendOARequest(BaseModel):
@@ -61,9 +129,29 @@ async def test_gemini():
 async def ingest_candidate(
     file: UploadFile = File(...),
     job_id: int = Form(...),
-    job_description: str = Form("")
+    job_description: str = Form(""),
+    name: str = Form(None),
+    email: str = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
-    """Ingest a candidate resume (PDF) and analyze it using Gemini"""
+    """Ingest a candidate resume (PDF) and analyze it using Gemini
+    
+    Uses authenticated user's email and name from JWT token.
+    """
+    # Always use authenticated user's info
+    email = current_user.get("email")
+    
+    # Get name from users table
+    user = snowflake_client.get_user_by_email(email)
+    if user:
+        name = user.get("NAME", "Candidate")
+    else:
+        name = "Candidate"
+    
+    logger.info(f"📝 Resume submission from authenticated user: {email}")
+    logger.info(f"   Using name: {name}")
+    logger.info(f"   Using email: {email}")
+    
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -120,24 +208,44 @@ async def ingest_candidate(
 
     # --- 3️⃣ Save to database ---
     try:
+        logger.info(f"💾 Saving candidate to database:")
+        logger.info(f"   Name: {name}")
+        logger.info(f"   Email: {email}")
+        logger.info(f"   Job ID: {job_id}")
+        logger.info(f"   Resume: {file.filename}")
+        
         candidate_id = snowflake_client.create_candidate(
-            name=file.filename.replace('.pdf', ''),
-            email="N/A",
+            name=name,
+            email=email,
             resume_url=f"uploads/{file.filename}",
             job_id=job_id
         )
         
+        logger.info(f"✅ Candidate created with ID: {candidate_id}")
+        
+        # Save fit score
+        snowflake_client.save_fit_score(candidate_id, fit_score, summary)
+        
+        # Determine status based on threshold
+        status = "accepted" if fit_score >= 85 else "rejected"
+        logger.info(f"Candidate {candidate_id} - Fit Score: {fit_score}% - Status: {status}")
+        
         if fit_score < 85:
             snowflake_client.update_candidate_stage(candidate_id, "rejected")
-            return CandidateResponse(
-                candidate_id=candidate_id,
-                fit_score=fit_score,
-                skills=skills,
-                status="rejected",
-                summary=summary
-            )
-
-        snowflake_client.save_fit_score(candidate_id, fit_score, summary)
+            logger.info(f"Candidate {candidate_id} rejected (below 85% threshold)")
+        else:
+            logger.info(f"Candidate {candidate_id} accepted (>= 85% threshold) - Triggering OA automatically")
+            
+            # Automatically trigger OA for qualified candidates
+            try:
+                oa_result = oa_trigger.trigger_oa_for_candidate(candidate_id)
+                if oa_result.get("success"):
+                    logger.info(f"✅ OA automatically sent to {email}")
+                else:
+                    logger.error(f"❌ Failed to send OA: {oa_result.get('error')}")
+            except Exception as e:
+                logger.error(f"❌ Exception triggering OA: {str(e)}")
+        
         return CandidateResponse(
             candidate_id=candidate_id,
             fit_score=fit_score,

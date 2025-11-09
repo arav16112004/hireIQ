@@ -5,6 +5,7 @@ Functions for interacting with OA tables in Snowflake
 import json
 from typing import Optional, Dict, List, Any
 from app.db.snowflake_client import get_connection
+from app.core.logger import logger
 
 
 # ============================================================
@@ -272,19 +273,69 @@ def start_oa_session(session_id: int) -> bool:
         return rowcount > 0
 
 
-def complete_oa_session(session_id: int, score: float, max_score: float) -> bool:
+def complete_oa_session(session_id: int, score: float, max_score: float, max_cheating_score: Optional[float] = None) -> bool:
     """Mark an OA session as completed"""
-    query = """
-        UPDATE oa_sessions 
-        SET status = %s, completed_at = CURRENT_TIMESTAMP, score = %s, max_score = %s
-        WHERE id = %s
-    """
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(query, ('completed', score, max_score, session_id))
-        rowcount = cursor.rowcount
-        cursor.close()
-        return rowcount > 0
+        try:
+            # Check if max_cheating_score column exists using information schema
+            column_exists = False
+            try:
+                check_query = """
+                    SELECT COUNT(*) 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = UPPER('PUBLIC') 
+                    AND TABLE_NAME = UPPER('OA_SESSIONS') 
+                    AND COLUMN_NAME = UPPER('MAX_CHEATING_SCORE')
+                """
+                cursor.execute(check_query)
+                result = cursor.fetchone()
+                column_exists = result[0] > 0 if result else False
+            except Exception as e:
+                logger.warning(f"Could not check for MAX_CHEATING_SCORE column: {str(e)}")
+                column_exists = False
+            
+            # Build query based on whether column exists and value is provided
+            if max_cheating_score is not None and column_exists:
+                query = """
+                    UPDATE oa_sessions 
+                    SET status = %s, completed_at = CURRENT_TIMESTAMP, score = %s, max_score = %s, max_cheating_score = %s
+                    WHERE id = %s
+                """
+                params = ('completed', score, max_score, max_cheating_score, session_id)
+            else:
+                query = """
+                    UPDATE oa_sessions 
+                    SET status = %s, completed_at = CURRENT_TIMESTAMP, score = %s, max_score = %s
+                    WHERE id = %s
+                """
+                params = ('completed', score, max_score, session_id)
+            
+            cursor.execute(query, params)
+            rowcount = cursor.rowcount
+            return rowcount > 0
+        except Exception as e:
+            logger.error(f"Error completing OA session {session_id}: {str(e)}")
+            # If error is about missing column, try without it
+            if "MAX_CHEATING_SCORE" in str(e) or "max_cheating_score" in str(e) or "invalid identifier" in str(e).lower():
+                try:
+                    logger.warning(f"Column MAX_CHEATING_SCORE doesn't exist, completing session without it")
+                    query = """
+                        UPDATE oa_sessions 
+                        SET status = %s, completed_at = CURRENT_TIMESTAMP, score = %s, max_score = %s
+                        WHERE id = %s
+                    """
+                    params = ('completed', score, max_score, session_id)
+                    cursor.execute(query, params)
+                    rowcount = cursor.rowcount
+                    logger.info(f"Completed OA session {session_id} without max_cheating_score (column doesn't exist yet)")
+                    return rowcount > 0
+                except Exception as e2:
+                    logger.error(f"Error completing OA session (fallback): {str(e2)}")
+                    return False
+            raise
+        finally:
+            cursor.close()
 
 
 def update_oa_session_status(session_id: int, status: str) -> bool:
