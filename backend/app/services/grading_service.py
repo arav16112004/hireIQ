@@ -134,7 +134,8 @@ def grade_submission(submission_id: int) -> Dict[str, Any]:
 
 def calculate_session_score(session_id: int) -> Dict[str, Any]:
     """
-    Calculate overall score for an OA session based on all submissions
+    Calculate overall score for an OA session.
+    Priority: 1) Use session's SCORE/MAX_SCORE if set, 2) Calculate from submissions
     
     Args:
         session_id: ID of the OA session
@@ -159,6 +160,66 @@ def calculate_session_score(session_id: int) -> Dict[str, Any]:
                 "error": "No questions in session"
             }
         
+        # Priority 1: Check if session already has SCORE and MAX_SCORE set
+        # Handle case-insensitive column names (Snowflake might return uppercase)
+        session_score = None
+        session_max_score = None
+        session_status = None
+        
+        # Try multiple case variations
+        for key in session.keys():
+            key_upper = key.upper()
+            if key_upper == 'SCORE':
+                session_score = session[key]
+            elif key_upper == 'MAX_SCORE':
+                session_max_score = session[key]
+            elif key_upper == 'STATUS':
+                session_status = session[key]
+        
+        # Also try direct access
+        if session_score is None:
+            session_score = session.get('SCORE') or session.get('score') or session.get('Score')
+        if session_max_score is None:
+            session_max_score = session.get('MAX_SCORE') or session.get('max_score') or session.get('Max_Score')
+        if session_status is None:
+            session_status = session.get('STATUS') or session.get('status') or session.get('Status')
+        
+        logger.info(f"Session {session_id} raw data: {list(session.keys())}")
+        logger.info(f"Session {session_id}: score={session_score}, max_score={session_max_score}, status={session_status}")
+        
+        if session_score is not None and session_max_score is not None:
+            try:
+                score_float = float(session_score)
+                max_score_float = float(session_max_score)
+                
+                logger.info(f"Parsed scores: score_float={score_float}, max_score_float={max_score_float}")
+                
+                if max_score_float > 0:
+                    percentage = (score_float / max_score_float) * 100
+                    logger.info(f"✅ Using session SCORE/MAX_SCORE: {score_float}/{max_score_float} = {percentage:.2f}%")
+                    
+                    return {
+                        "success": True,
+                        "session_id": session_id,
+                        "total_score": score_float,
+                        "max_score": max_score_float,
+                        "percentage": percentage,
+                        "questions_attempted": len(question_ids),  # Assume all questions attempted if score is set
+                        "total_questions": len(question_ids),
+                        "source": "session_scores"
+                    }
+                else:
+                    logger.warning(f"max_score_float is 0 or negative: {max_score_float}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error parsing session scores: {e}, falling back to submission calculation")
+                logger.warning(f"session_score type: {type(session_score)}, value: {session_score}")
+                logger.warning(f"session_max_score type: {type(session_max_score)}, value: {session_max_score}")
+        else:
+            logger.warning(f"Session {session_id} missing SCORE or MAX_SCORE: score={session_score}, max_score={session_max_score}")
+        
+        # Priority 2: Calculate from submissions
+        logger.info(f"Session doesn't have SCORE/MAX_SCORE, calculating from submissions...")
+        
         # Calculate max possible score
         max_score = 0
         for qid in question_ids:
@@ -168,17 +229,24 @@ def calculate_session_score(session_id: int) -> Dict[str, Any]:
         
         # Get all submissions for this session
         submissions = oa_client.get_submissions_by_session(session_id)
+        logger.info(f"Found {len(submissions)} submission(s) for session {session_id}")
         
         # Calculate best score for each question (in case of multiple attempts)
         question_scores = {}
         for sub in submissions:
-            qid = sub['QUESTION_ID']
-            score = float(sub.get('SCORE', 0) or 0)
-            if qid not in question_scores or score > question_scores[qid]:
-                question_scores[qid] = score
+            qid = sub.get('QUESTION_ID')
+            if qid:
+                try:
+                    score = float(sub.get('SCORE', 0) or 0)
+                    if qid not in question_scores or score > question_scores[qid]:
+                        question_scores[qid] = score
+                        logger.info(f"Question {qid}: best score = {score}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error parsing score for submission {sub.get('ID')}: {e}")
         
         # Total score is sum of best scores for each question
         total_score = sum(question_scores.values())
+        logger.info(f"Calculated from submissions: total_score={total_score}, max_score={max_score}")
         
         return {
             "success": True,
@@ -187,11 +255,12 @@ def calculate_session_score(session_id: int) -> Dict[str, Any]:
             "max_score": max_score,
             "percentage": (total_score / max_score * 100) if max_score > 0 else 0,
             "questions_attempted": len(question_scores),
-            "total_questions": len(question_ids)
+            "total_questions": len(question_ids),
+            "source": "submissions"
         }
         
     except Exception as e:
-        logger.error(f"Error calculating session score for {session_id}: {str(e)}")
+        logger.error(f"Error calculating session score for {session_id}: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": str(e)
@@ -387,6 +456,180 @@ def get_oa_results_for_candidate(candidate_id: int) -> Dict[str, Any]:
         return {
             "success": False,
             "error": str(e)
+        }
+
+
+def get_best_oa_score_percentage(candidate_id: int) -> Optional[float]:
+    """
+    Get the best OA score percentage for a candidate.
+    Priority: 1) OA_SESSIONS table (most reliable - has both score and max_score), 2) OA_RESULTS table
+    
+    Args:
+        candidate_id: ID of the candidate
+    
+    Returns:
+        Best percentage score (0-100) or None if no completed OA assessments
+    """
+    try:
+        best_percentage = None
+        logger.info(f"🔍 Checking OA scores for candidate {candidate_id}")
+        
+        # Priority 1: Check OA_SESSIONS table for completed sessions (calculate percentage)
+        # This is more reliable because it has both SCORE and MAX_SCORE
+        sessions = oa_client.get_sessions_by_candidate(candidate_id)
+        logger.info(f"Found {len(sessions)} OA session(s) for candidate {candidate_id}")
+        
+        for session in sessions:
+            # Handle case-insensitive column names
+            session_id = session.get('ID') or session.get('id') or session.get('Id')
+            status = None
+            score = None
+            max_score = None
+            
+            # Try multiple case variations
+            for key in session.keys():
+                key_upper = key.upper()
+                if key_upper == 'STATUS':
+                    status = session[key]
+                elif key_upper == 'SCORE':
+                    score = session[key]
+                elif key_upper == 'MAX_SCORE':
+                    max_score = session[key]
+            
+            # Fallback to direct access
+            if status is None:
+                status = session.get('STATUS') or session.get('status') or session.get('Status')
+            if score is None:
+                score = session.get('SCORE') or session.get('score') or session.get('Score')
+            if max_score is None:
+                max_score = session.get('MAX_SCORE') or session.get('max_score') or session.get('Max_Score')
+            
+            logger.info(f"Session {session_id}: status={status}, score={score}, max_score={max_score} (raw keys: {list(session.keys())[:5]}...)")
+            
+            # Check if session is completed (case-insensitive)
+            if status:
+                status_upper = str(status).upper().strip()
+                if status_upper in ('COMPLETED', 'COMPLETE'):
+                    # Try to get score from session SCORE/MAX_SCORE first
+                    if score is not None and max_score is not None:
+                        try:
+                            score_float = float(score)
+                            max_score_float = float(max_score)
+                            
+                            logger.info(f"Session {session_id}: score_float={score_float}, max_score_float={max_score_float}")
+                            
+                            if max_score_float > 0:
+                                percentage = (score_float / max_score_float) * 100
+                                logger.info(f"Session {session_id}: calculated percentage = {percentage:.2f}%")
+                                
+                                if best_percentage is None or percentage > best_percentage:
+                                    best_percentage = percentage
+                                    logger.info(f"✅ New best score: {best_percentage:.2f}% from session {session_id}")
+                            else:
+                                logger.warning(f"Session {session_id}: max_score_float is 0 or negative: {max_score_float}")
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Error calculating percentage for session {session_id}: {e}")
+                            logger.warning(f"  score type: {type(score)}, value: {score}")
+                            logger.warning(f"  max_score type: {type(max_score)}, value: {max_score}")
+                    else:
+                        logger.warning(f"Session {session_id} is completed but missing score or max_score: score={score}, max_score={max_score}")
+                        # Fallback: Calculate score from submissions for this session
+                        logger.info(f"Attempting to calculate score from submissions for session {session_id}...")
+                        try:
+                            session_score_result = calculate_session_score(session_id)
+                            if session_score_result.get('success') and session_score_result.get('percentage') is not None:
+                                session_percentage = session_score_result['percentage']
+                                logger.info(f"Calculated percentage from submissions for session {session_id}: {session_percentage:.2f}%")
+                                if best_percentage is None or session_percentage > best_percentage:
+                                    best_percentage = session_percentage
+                                    logger.info(f"✅ New best score from submissions: {best_percentage:.2f}% from session {session_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to calculate score from submissions for session {session_id}: {e}")
+                else:
+                    logger.info(f"Session {session_id} status is '{status}' (not completed, expected 'completed')")
+            else:
+                logger.warning(f"Session {session_id} has no status field")
+        
+        # Priority 2: Check OA_RESULTS table as fallback (if no session data found)
+        if best_percentage is None:
+            logger.info(f"No completed sessions found, checking OA_RESULTS table...")
+            oa_result = snowflake_client.get_oa_result(candidate_id)
+            if oa_result:
+                result_score = oa_result.get('SCORE') or oa_result.get('score')
+                result_status = oa_result.get('STATUS') or oa_result.get('status')
+                
+                logger.info(f"OA_RESULTS: score={result_score}, status={result_status}")
+                
+                if result_score is not None and result_status and result_status.upper() == 'COMPLETED':
+                    try:
+                        score_float = float(result_score)
+                        # OA_RESULTS score should be percentage (0-100) based on schema
+                        # But if it's > 100, it might be a raw score
+                        if score_float <= 100:
+                            best_percentage = score_float
+                            logger.info(f"✅ Found OA result percentage from OA_RESULTS: {best_percentage}%")
+                        else:
+                            logger.warning(f"OA_RESULTS score {score_float} is > 100, treating as raw score (not percentage)")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Error parsing OA_RESULTS score: {e}")
+        
+        if best_percentage is not None:
+            logger.info(f"✅ Best OA score for candidate {candidate_id}: {best_percentage:.2f}%")
+        else:
+            logger.warning(f"❌ No completed OA assessments found for candidate {candidate_id}")
+        
+        return best_percentage
+        
+    except Exception as e:
+        logger.error(f"Error getting best OA score for candidate {candidate_id}: {str(e)}", exc_info=True)
+        return None
+
+
+def check_interview_eligibility(candidate_id: int, threshold: float = 90.0) -> Dict[str, Any]:
+    """
+    Check if a candidate is eligible for interview based on OA score
+    
+    Args:
+        candidate_id: ID of the candidate
+        threshold: Minimum OA score percentage required (default 90%)
+    
+    Returns:
+        Dictionary with eligibility status and details
+    """
+    try:
+        logger.info(f"🎯 Checking interview eligibility for candidate {candidate_id} (threshold: {threshold}%)")
+        
+        # Get best OA score
+        best_score = get_best_oa_score_percentage(candidate_id)
+        
+        if best_score is None:
+            logger.warning(f"❌ No OA score found for candidate {candidate_id}")
+            return {
+                "eligible": False,
+                "reason": "No completed OA assessments found",
+                "best_score": None,
+                "threshold": threshold
+            }
+        
+        # Use >= to allow exactly 90% to pass (or > for strictly above)
+        eligible = best_score >= threshold
+        
+        logger.info(f"{'✅' if eligible else '❌'} Candidate {candidate_id}: score={best_score:.2f}%, threshold={threshold}%, eligible={eligible}")
+        
+        return {
+            "eligible": eligible,
+            "reason": "Eligible for interview" if eligible else f"OA score {best_score:.1f}% is below the required {threshold}%",
+            "best_score": best_score,
+            "threshold": threshold
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking interview eligibility for candidate {candidate_id}: {str(e)}", exc_info=True)
+        return {
+            "eligible": False,
+            "reason": f"Error checking eligibility: {str(e)}",
+            "best_score": None,
+            "threshold": threshold
         }
 
 

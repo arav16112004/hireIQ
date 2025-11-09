@@ -62,17 +62,42 @@ class ProfileResponse(BaseModel):
 # PROFILE ENDPOINTS
 # ============================================================
 
-@router.get("/", response_model=ProfileResponse)
+@router.get("/")
 def get_my_profile(current_user: dict = Depends(get_current_candidate)):
     """
     Get current candidate's profile
     
     Requires: Candidate role
+    Returns empty profile structure if profile doesn't exist yet
     """
     profile = snowflake_client.get_candidate_profile_by_user_id(current_user["user_id"])
     
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        # Return empty profile structure instead of 404
+        # Get email from user account
+        from app.db.snowflake_client import get_user_by_id
+        user = get_user_by_id(current_user["user_id"])
+        email = None
+        if user:
+            email = user.get("EMAIL") or user.get("email")
+        
+        return {
+            "id": 0,
+            "user_id": current_user["user_id"],
+            "email": email,
+            "resume_url": None,
+            "phone": None,
+            "location": None,
+            "linkedin_url": None,
+            "portfolio_url": None,
+            "skills": None,
+            "experience_years": None,
+            "education": None,
+            "bio": None,
+            "description": None,
+            "is_profile_complete": False,
+            "created_at": None
+        }
     
     # Handle both uppercase and lowercase column names from Snowflake
     def get_field(field_name: str, default=None):

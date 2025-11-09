@@ -137,6 +137,8 @@ export const apiClient = {
     complete: (sessionId: number, maxCheatingScore?: number) => api.post('/oa/complete', { session_id: sessionId, max_cheating_score: maxCheatingScore }),
     
     getResults: (sessionId: number) => api.get(`/oa/session/${sessionId}/results`),
+    
+    getSessionSubmissions: (sessionId: number) => api.get(`/oa/session/${sessionId}/submissions`),
   },
 
   // ============================================================
@@ -170,17 +172,19 @@ export const apiClient = {
   // INTERVIEWS
   // ============================================================
   interviews: {
-    start: (candidateId: number, jobId: number) =>
-      api.post('/interviews/start', null, { params: { candidate_id: candidateId, job_id: jobId } }),
+    checkEligibility: () => api.get('/interviews/eligibility'),
+    
+    start: (jobId: number, candidateId?: number) =>
+      api.post('/interviews/start', { job_id: jobId, candidate_id: candidateId }),
     
     next: (sessionId: string, responseText: string) =>
-      api.post('/interviews/next', null, { params: { session_id: sessionId, response_text: responseText } }),
+      api.post('/interviews/next', { session_id: sessionId, response_text: responseText }),
     
     end: (sessionId: string) =>
-      api.post('/interviews/end', null, { params: { session_id: sessionId } }),
+      api.post('/interviews/end', { session_id: sessionId }),
     
     submitEyeMetrics: (sessionId: string, gazeData: any) =>
-      api.post('/interviews/metrics/eye', null, { params: { session_id: sessionId, gaze_data: gazeData } }),
+      api.post('/interviews/metrics/eye', { session_id: sessionId, gaze_data: gazeData }),
   },
 
   // ============================================================

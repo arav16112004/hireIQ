@@ -13,6 +13,9 @@ export default function CandidateDashboard() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [oaSessions, setOaSessions] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [interviewEligible, setInterviewEligible] = useState<boolean | null>(null);
+  const [interviewEligibilityData, setInterviewEligibilityData] = useState<any>(null);
+  const [checkingInterview, setCheckingInterview] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -28,8 +31,29 @@ export default function CandidateDashboard() {
     if (user) {
       setDataLoading(false); // Show page immediately
       fetchData(); // Load data in background
+      checkInterviewEligibility(); // Check interview eligibility
     }
   }, [user, authLoading]);
+
+  const checkInterviewEligibility = async () => {
+    try {
+      setCheckingInterview(true);
+      const response = await apiClient.interviews.checkEligibility();
+      console.log('Interview eligibility response:', response.data);
+      setInterviewEligible(response.data?.eligible || false);
+      setInterviewEligibilityData(response.data);
+    } catch (error: any) {
+      console.error('Failed to check interview eligibility:', error);
+      console.error('Error response:', error.response?.data);
+      setInterviewEligible(false);
+      setInterviewEligibilityData({
+        eligible: false,
+        reason: error.response?.data?.detail || 'Unable to check eligibility'
+      });
+    } finally {
+      setCheckingInterview(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -235,6 +259,11 @@ export default function CandidateDashboard() {
               <Link href="/apply" className="block px-5 py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg hover:from-sky-400 hover:to-blue-500 transition-all text-center font-medium text-sm shadow-lg ring-1 ring-sky-400/40 hover:shadow-sky-500/30">
                 Apply for a Job
               </Link>
+              {interviewEligible && (
+                <Link href="/interview" className="block px-5 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 transition-all text-center font-medium text-sm shadow-lg ring-1 ring-emerald-400/40 hover:shadow-emerald-500/30">
+                  🎥 Start Interview
+                </Link>
+              )}
               <Link href="/candidate/profile" className="block px-5 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all text-center font-medium text-sm border border-gray-300">
                 Update Profile
               </Link>
@@ -383,6 +412,106 @@ export default function CandidateDashboard() {
               </div>
             );
             })()}
+          </div>
+        </div>
+
+        {/* Interview Section */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow mb-10">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-900">
+              AI Interview
+            </h2>
+            <button
+              onClick={checkInterviewEligibility}
+              disabled={checkingInterview}
+              className="text-sm text-blue-600 hover:text-blue-700 disabled:text-gray-400"
+            >
+              {checkingInterview ? 'Checking...' : 'Refresh'}
+            </button>
+          </div>
+          <div className="px-6 py-6">
+            {checkingInterview ? (
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                <p className="mt-2 text-sm text-gray-500">Checking eligibility...</p>
+              </div>
+            ) : interviewEligible ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-2xl">✅</span>
+                    <div>
+                      <h3 className="font-semibold text-emerald-900">You're eligible for an interview!</h3>
+                      <p className="text-sm text-emerald-700 mt-1">
+                        Your OA score: {interviewEligibilityData?.best_score?.toFixed(1)}% (Required: {interviewEligibilityData?.threshold}%)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  href="/interview"
+                  className="block w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-400 hover:to-teal-500 text-center font-medium transition-all shadow-lg ring-1 ring-emerald-400/40 hover:shadow-emerald-500/30"
+                >
+                  🎥 Start AI Interview
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <h3 className="font-semibold text-amber-900">Interview Not Available</h3>
+                      <p className="text-sm text-amber-700 mt-1">
+                        {interviewEligibilityData?.reason || 'You need to score above 90% on an OA assessment to unlock the interview.'}
+                      </p>
+                      {interviewEligibilityData?.best_score !== null && interviewEligibilityData?.best_score !== undefined && (
+                        <p className="text-sm text-amber-600 mt-2">
+                          Your best OA score: <span className="font-semibold">{interviewEligibilityData.best_score.toFixed(1)}%</span> (Required: {interviewEligibilityData?.threshold}%)
+                        </p>
+                      )}
+                      {interviewEligibilityData?.debug && (
+                        <div className="mt-3 p-3 bg-amber-100 rounded text-xs">
+                          <p className="font-semibold mb-1">Debug Info:</p>
+                          <p>Candidate IDs: {JSON.stringify(interviewEligibilityData.debug.all_candidate_ids || interviewEligibilityData.debug.candidate_id)}</p>
+                          <p>Sessions found: {interviewEligibilityData.debug.total_sessions || 0}</p>
+                          {interviewEligibilityData.debug.sessions && interviewEligibilityData.debug.sessions.length > 0 && (
+                            <details className="mt-2">
+                              <summary className="cursor-pointer font-semibold">Session Details</summary>
+                              <pre className="mt-2 text-xs overflow-auto">
+                                {JSON.stringify(interviewEligibilityData.debug.sessions, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-600 space-y-2">
+                  <p className="font-medium">To become eligible:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>Complete an OA assessment</li>
+                    <li>Score above 90% on the assessment</li>
+                    <li>Wait for results to be processed</li>
+                  </ul>
+                </div>
+                <div className="flex gap-2">
+                  <Link
+                    href="/candidate/dashboard"
+                    className="flex-1 px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-center font-medium transition border border-gray-300"
+                  >
+                    View OA Assessments
+                  </Link>
+                  <button
+                    onClick={checkInterviewEligibility}
+                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm font-medium transition border border-blue-300"
+                  >
+                    Check Again
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

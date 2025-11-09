@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Interviewer - Ava</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Fullscreen Agent -->
+  <div id="ava-agent" class="agent-container"></div>
+
+  <!-- Floating Webcam -->
+  <video id="userVideo" autoplay playsinline muted class="user-video"></video>
+
+  <!-- Start/Stop Controls -->
+  <div class="controls">
+    <button id="startBtn">🎥 Start Camera</button>
+    <button id="stopBtn">⏹ Stop Camera</button>
+  </div>
+
+  <!-- D-ID Agent Embed -->
+  <script type="module"
+    src="https://agent.d-id.com/v2/index.js"
+    data-mode="full"
+    data-client-key="Z29vZ2xlLW9hdXRoMnwxMDY5MTYxMzUwMTQzMzQ4Njg3Njc6VGxjWVdCc0tDc0lsU0VtUnRlTXZ3"
+    data-agent-id="v2_agt_eUdbXoE4"
+    data-name="did-agent"
+    data-monitor="true"
+    data-target-id="ava-agent">
+  </script>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

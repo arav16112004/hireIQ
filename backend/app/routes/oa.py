@@ -510,6 +510,139 @@ def get_session_submissions(session_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/session/{session_id}/results")
+def get_session_results(session_id: int, current_user: dict = Depends(get_current_user)):
+    """
+    Get comprehensive results for a completed OA session
+    
+    Returns score breakdown, question results, and overall performance
+    """
+    try:
+        # Get session
+        session = oa_client.get_oa_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Verify user owns this session
+        candidate_id = session.get('CANDIDATE_ID')
+        candidate = snowflake_client.get_candidate(candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        user_email = current_user.get('email', '').lower()
+        candidate_email = candidate.get('EMAIL', '').lower()
+        if user_email != candidate_email:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to view these results"
+            )
+        
+        # Log session data for debugging
+        logger.info(f"📊 Session {session_id} data: SCORE={session.get('SCORE')}, MAX_SCORE={session.get('MAX_SCORE')}, STATUS={session.get('STATUS')}")
+        
+        # Calculate session score using grading service
+        score_result = grading_service.calculate_session_score(session_id)
+        
+        if not score_result['success']:
+            logger.error(f"❌ Failed to calculate score for session {session_id}: {score_result.get('error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=score_result.get('error', 'Failed to calculate score')
+            )
+        
+        logger.info(f"✅ Score calculation result: {score_result.get('percentage', 0):.2f}% (source: {score_result.get('source', 'unknown')})")
+        
+        # Get questions and submissions
+        question_ids = session.get('QUESTION_IDS', [])
+        submissions = oa_client.get_submissions_by_session(session_id)
+        questions = []
+        question_results = []
+        
+        # If session has SCORE/MAX_SCORE set, distribute the score evenly across questions
+        # Otherwise, calculate from submissions
+        session_has_scores = score_result.get('source') == 'session_scores'
+        overall_percentage = score_result['percentage']
+        total_score = score_result['total_score']
+        max_score = score_result['max_score']
+        
+        if session_has_scores and len(question_ids) > 0:
+            # Session scores are set - use the overall percentage for each question
+            # When session has overall score, we apply the same percentage to all questions
+            for idx, qid in enumerate(question_ids):
+                question = oa_client.get_question(qid, include_test_cases=False)
+                if question:
+                    question_max_score = float(question.get('POINTS', 100))
+                    # Use the overall percentage directly for each question
+                    question_percentage = overall_percentage
+                    # Calculate the raw score that would give this percentage
+                    question_score = (question_percentage / 100.0) * question_max_score
+                    
+                    question_results.append({
+                        "question_id": qid,
+                        "question_title": question.get('TITLE', f"Question {idx + 1}"),
+                        "score": question_percentage,
+                        "raw_score": question_score,
+                        "max_score": question_max_score,
+                        "passed": question_percentage >= 70,
+                        "test_cases_passed": 0,  # Unknown if using session scores
+                        "total_test_cases": 0,
+                        "execution_time": None,
+                    })
+        else:
+            # Calculate from submissions
+            for qid in question_ids:
+                question = oa_client.get_question(qid, include_test_cases=False)
+                if question:
+                    questions.append(question)
+                    
+                    # Find best submission for this question
+                    question_submissions = [s for s in submissions if s.get('QUESTION_ID') == qid]
+                    best_submission = None
+                    if question_submissions:
+                        try:
+                            best_submission = max(
+                                question_submissions,
+                                key=lambda s: float(s.get('SCORE', 0) or 0)
+                            )
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Calculate question score
+                    question_max_score = float(question.get('POINTS', 100))
+                    question_score = float(best_submission.get('SCORE', 0) or 0) if best_submission else 0
+                    question_percentage = (question_score / question_max_score * 100) if question_max_score > 0 else 0
+                    
+                    question_results.append({
+                        "question_id": qid,
+                        "question_title": question.get('TITLE', f"Question {qid}"),
+                        "score": question_percentage,
+                        "raw_score": question_score,
+                        "max_score": question_max_score,
+                        "passed": question_percentage >= 70,
+                        "test_cases_passed": best_submission.get('PASSED_TESTS', 0) if best_submission else 0,
+                        "total_test_cases": best_submission.get('TOTAL_TESTS', 0) if best_submission else 0,
+                        "execution_time": best_submission.get('EXECUTION_TIME') if best_submission else None,
+                    })
+        
+        return {
+            "session_id": session_id,
+            "overall_score": overall_percentage,
+            "total_score": score_result['total_score'],
+            "max_score": score_result['max_score'],
+            "percentage": overall_percentage,
+            "passed": overall_percentage >= 70,
+            "questions": question_results,
+            "questions_attempted": score_result['questions_attempted'],
+            "total_questions": score_result['total_questions'],
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting results for session {session_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/complete")
 def complete_oa_session(request: CompleteSessionRequest, current_user: dict = Depends(get_current_user)):
     """
