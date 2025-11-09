@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import apiClient from '@/lib/api';
@@ -19,99 +19,10 @@ export default function InterviewPage() {
   const [totalQuestions, setTotalQuestions] = useState(5);
   const [candidateId, setCandidateId] = useState<number | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
-  
-  const userVideoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const agentContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Load D-ID agent script on mount - it should be ready when interview starts
-    if (document.getElementById('did-agent-script')) {
-      return;
-    }
-
-    console.log('Loading D-ID agent (Ava) script...');
-    const script = document.createElement('script');
-    script.id = 'did-agent-script';
-    script.type = 'module';
-    script.src = 'https://agent.d-id.com/v2/index.js';
-    
-    // Configure for conversational mode with voice input/output
-    script.setAttribute('data-mode', 'full');
-    script.setAttribute('data-client-key', 'Z29vZ2xlLW9hdXRoMnwxMDY5MTYxMzUwMTQzMzQ4Njg3Njc6VGxjWVdCc0tDc0lsU0VtUnRlTXZ3');
-    script.setAttribute('data-agent-id', 'v2_agt_eUdbXoE4');
-    script.setAttribute('data-name', 'did-agent');
-    script.setAttribute('data-monitor', 'true');
-    script.setAttribute('data-target-id', 'ava-agent');
-    // Enable voice input/output for conversation
-    script.setAttribute('data-voice-enabled', 'true');
-    script.setAttribute('data-listening', 'true');
-    
-    script.onload = () => {
-      console.log('✅ D-ID agent (Ava) script loaded successfully');
-      // Wait for agent to initialize
-      setTimeout(() => {
-        const agentContainer = document.getElementById('ava-agent');
-        if (agentContainer) {
-          const iframe = agentContainer.querySelector('iframe');
-          if (iframe) {
-            console.log('✅ Ava (D-ID agent) is ready for conversation');
-          }
-        }
-      }, 2000);
-    };
-    
-    script.onerror = (error) => {
-      console.error('❌ Failed to load D-ID agent script:', error);
-    };
-    
-    document.body.appendChild(script);
-
-    return () => {
-      const scriptEl = document.getElementById('did-agent-script');
-      if (scriptEl && scriptEl.parentNode) {
-        scriptEl.parentNode.removeChild(scriptEl);
-      }
-    };
-  }, []); // Load once on mount
-
-  // Send question to Ava when it changes and interview has started
-  useEffect(() => {
-    if (interviewStarted && currentQuestion?.text) {
-      console.log('📝 New question received, sending to Ava:', currentQuestion.text);
-      // Wait for agent to be ready, then send question
-      setTimeout(() => {
-        speakQuestion(currentQuestion.text);
-      }, 3000); // Give Ava time to initialize
-    }
-  }, [currentQuestion, interviewStarted]);
-  
-  // Listen for messages from D-ID agent (Ava's responses)
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Listen for messages from D-ID agent
-      if (event.data && typeof event.data === 'object') {
-        console.log('📨 Message from Ava:', event.data);
-        
-        // Handle different message types from D-ID agent
-        if (event.data.type === 'agent_response' || event.data.type === 'transcript') {
-          const transcript = event.data.text || event.data.transcript;
-          if (transcript) {
-            console.log('💬 Ava said:', transcript);
-          }
-        }
-      }
-    };
-    
-    window.addEventListener('message', handleMessage);
-    return () => {
-      window.removeEventListener('message', handleMessage);
-    };
-  }, []);
 
   useEffect(() => {
     if (authLoading) {
-      return; // Still loading auth, wait
+      return;
     }
 
     if (!user) {
@@ -124,8 +35,7 @@ export default function InterviewPage() {
       return;
     }
 
-    // User is authenticated and is a candidate
-    // Fetch candidate info and check eligibility in parallel
+    // Fetch candidate info and check eligibility
     const initialize = async () => {
       try {
         await Promise.all([
@@ -145,7 +55,6 @@ export default function InterviewPage() {
     try {
       console.log('Fetching candidate info...');
       
-      // Try to get candidate_id from OA sessions first (most reliable)
       try {
         const oaRes = await apiClient.oa.getMySessions();
         console.log('OA sessions response:', oaRes.data);
@@ -154,7 +63,6 @@ export default function InterviewPage() {
           setCandidateId(oaRes.data.candidate_id);
           console.log('Set candidate_id from OA response:', oaRes.data.candidate_id);
         } else if (oaRes.data?.sessions && Array.isArray(oaRes.data.sessions) && oaRes.data.sessions.length > 0) {
-          // Try to get candidate_id from first session
           const firstSession = oaRes.data.sessions[0];
           const candidateIdFromSession = firstSession.CANDIDATE_ID || firstSession.candidate_id || firstSession.CANDIDATE_ID;
           if (candidateIdFromSession) {
@@ -166,7 +74,6 @@ export default function InterviewPage() {
         console.error('Error fetching OA sessions:', error);
       }
       
-      // Get first available job
       try {
         const jobsRes = await apiClient.jobs.getAll();
         console.log('Jobs response:', jobsRes.data);
@@ -181,8 +88,6 @@ export default function InterviewPage() {
       } catch (error) {
         console.error('Error fetching jobs:', error);
       }
-      
-      console.log('Candidate info fetch complete. candidateId:', candidateId, 'jobId:', jobId);
     } catch (error) {
       console.error('Error in fetchCandidateInfo:', error);
     }
@@ -193,7 +98,6 @@ export default function InterviewPage() {
       setChecking(true);
       console.log('Checking interview eligibility...');
       
-      // Add timeout to prevent infinite loading
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Eligibility check timeout')), 10000)
       );
@@ -217,81 +121,6 @@ export default function InterviewPage() {
     }
   };
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: false 
-      });
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = stream;
-        streamRef.current = stream;
-      }
-    } catch (err) {
-      console.error('Failed to access webcam:', err);
-      alert('Please allow camera access to continue the interview.');
-    }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = null;
-      }
-      streamRef.current = null;
-    }
-  };
-
-  const speakQuestion = (questionText: string) => {
-    console.log('🎤 Sending question to Ava:', questionText);
-    
-    try {
-      const agentContainer = document.getElementById('ava-agent');
-      
-      if (agentContainer) {
-        const iframe = agentContainer.querySelector('iframe');
-        if (iframe) {
-          console.log('✅ Ava (D-ID agent) iframe found, sending question...');
-          // Send question to Ava via postMessage
-          // D-ID agent accepts various message formats
-          try {
-            // Format 1: Direct message
-            iframe.contentWindow?.postMessage({
-              type: 'agent_message',
-              message: questionText,
-              action: 'speak'
-            }, '*');
-            
-            // Format 2: Text input
-            iframe.contentWindow?.postMessage({
-              type: 'text',
-              text: questionText
-            }, '*');
-            
-            // Format 3: User message (Ava will respond)
-            iframe.contentWindow?.postMessage({
-              type: 'user_message',
-              message: questionText
-            }, '*');
-            
-            console.log('✅ Question sent to Ava');
-          } catch (e) {
-            console.log('⚠️ Could not send message to Ava iframe:', e);
-          }
-        } else {
-          console.log('⏳ Waiting for Ava (D-ID agent) to load...');
-          // Retry after a delay
-          setTimeout(() => speakQuestion(questionText), 1000);
-        }
-      } else {
-        console.error('❌ Agent container not found');
-      }
-    } catch (error) {
-      console.error('❌ Error sending question to Ava:', error);
-    }
-  };
-
   const startInterview = async () => {
     if (!jobId) {
       alert('Unable to start interview: Missing job information');
@@ -306,29 +135,11 @@ export default function InterviewPage() {
       setInterviewStarted(true);
       setQuestionNumber(1);
       
-      // Start camera automatically
-      await startCamera();
+      // Store session ID in localStorage for the HTML page
+      localStorage.setItem('interviewSessionId', response.data.session_id);
       
-      // Ensure agent container is visible and properly sized
-      const agentContainer = document.getElementById('ava-agent');
-      if (agentContainer) {
-        agentContainer.style.display = 'block';
-        agentContainer.style.visibility = 'visible';
-        agentContainer.style.opacity = '1';
-        console.log('✅ Agent container made visible');
-        
-        // Check if agent is loading
-        setTimeout(() => {
-          const iframe = agentContainer.querySelector('iframe');
-          if (iframe) {
-            console.log('✅ D-ID agent iframe detected in container');
-          } else {
-            console.log('⏳ D-ID agent iframe not yet loaded, waiting...');
-          }
-        }, 1000);
-      }
-      
-      // The question will be spoken via the useEffect hook when currentQuestion is set
+      // Redirect to the HTML interview page with session ID
+      window.location.href = `/interview/index.html?sessionId=${response.data.session_id}`;
     } catch (error: any) {
       console.error('Error starting interview:', error);
       alert(error.response?.data?.detail || 'Failed to start interview');
@@ -352,9 +163,7 @@ export default function InterviewPage() {
       
       if (result.data.next_question) {
         setCurrentQuestion(result.data.next_question);
-        // Question will be spoken automatically via useEffect when currentQuestion changes
       } else {
-        // Interview complete
         await endInterview();
       }
     } catch (error: any) {
@@ -371,7 +180,6 @@ export default function InterviewPage() {
     try {
       setLoading(true);
       await apiClient.interviews.end(sessionId);
-      stopCamera();
       alert('Interview completed successfully!');
       router.push('/candidate/dashboard');
     } catch (error: any) {
@@ -415,7 +223,6 @@ export default function InterviewPage() {
     );
   }
 
-  // If eligibility is null/undefined, show a message
   if (!eligibility) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -496,6 +303,7 @@ export default function InterviewPage() {
               <li>• You'll have time to think and respond to each question</li>
               <li>• Your camera will be used for the interview</li>
               <li>• Answer each question thoughtfully and completely</li>
+              <li>• You'll be speaking with Ava, our AI interviewer</li>
             </ul>
           </div>
           
@@ -504,130 +312,13 @@ export default function InterviewPage() {
             disabled={loading || !candidateId || !jobId}
             className="px-8 py-4 bg-blue-600 text-white text-lg font-semibold rounded-lg hover:bg-blue-700 transition disabled:bg-gray-600 disabled:cursor-not-allowed"
           >
-            {loading ? 'Starting...' : 'Start Interview'}
+            {loading ? 'Starting...' : 'Start Interview with Ava'}
           </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-black overflow-hidden relative">
-      {/* D-ID Agent Container - Fullscreen - Ava the AI Interviewer */}
-      <div 
-        id="ava-agent" 
-        ref={agentContainerRef}
-        className="fixed top-0 left-0 w-full h-full bg-black"
-        style={{ 
-          display: interviewStarted ? 'block' : 'none',
-          width: '100vw',
-          height: '100vh',
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          zIndex: 1,
-          visibility: interviewStarted ? 'visible' : 'hidden',
-          opacity: interviewStarted ? 1 : 0,
-          overflow: 'hidden'
-        }}
-      />
-      
-      {/* Info overlay showing Ava is ready */}
-      {interviewStarted && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-600/90 text-white px-4 py-2 rounded-lg z-50 text-sm">
-          🎤 Ava is ready - You can speak your responses or type them below
-        </div>
-      )}
-      
-      {/* Loading indicator for agent */}
-      {interviewStarted && (
-        <div 
-          id="agent-loading"
-          className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white z-10"
-          style={{ display: 'none' }}
-        >
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
-          <p className="mt-4 text-center">Loading AI Avatar...</p>
-        </div>
-      )}
-      
-      {/* Floating Webcam - Bottom Right */}
-      <video
-        ref={userVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className="fixed bottom-8 right-8 w-64 h-48 rounded-lg object-cover shadow-2xl border-2 border-white/20 bg-gray-900 z-20"
-      />
-      
-      {/* Controls Overlay - Top Right */}
-      <div className="fixed top-6 right-6 z-30 flex gap-3">
-        <button
-          onClick={startCamera}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm shadow-lg"
-        >
-          🎥 Start Camera
-        </button>
-        <button
-          onClick={stopCamera}
-          className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition text-sm shadow-lg"
-        >
-          ⏹ Stop Camera
-        </button>
-      </div>
-      
-      {/* Question & Response Panel */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-lg border-t border-gray-700 p-6 z-10">
-        <div className="max-w-4xl mx-auto">
-          {/* Question */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">
-                Question {questionNumber} of {totalQuestions}
-              </span>
-              <span className="text-sm text-blue-400 font-medium">
-                {Math.round((questionNumber / totalQuestions) * 100)}% Complete
-              </span>
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">
-              {currentQuestion?.text || 'Loading question...'}
-            </h2>
-          </div>
-          
-          {/* Response Input */}
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <textarea
-                value={response}
-                onChange={(e) => setResponse(e.target.value)}
-                placeholder="Type your response here, or speak to Ava directly..."
-                className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={3}
-                disabled={loading}
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                💡 Tip: You can speak directly to Ava, or type your response here
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={submitResponse}
-                disabled={loading || !response.trim()}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:bg-gray-600 disabled:cursor-not-allowed font-semibold"
-              >
-                {loading ? 'Submitting...' : questionNumber === totalQuestions ? 'Finish' : 'Submit'}
-              </button>
-              <button
-                onClick={endInterview}
-                className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
-              >
-                End Interview
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  // This shouldn't be reached since we redirect, but just in case
+  return null;
 }
-
