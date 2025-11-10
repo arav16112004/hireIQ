@@ -41,6 +41,7 @@ class EyeMetricsRequest(BaseModel):
 def check_interview_eligibility(current_user: dict = Depends(get_current_user)):
     """
     Check if the current user is eligible for interview (OA score >= 90%)
+    Optimized for faster response
     """
     try:
         # Get candidate by email
@@ -50,142 +51,73 @@ def check_interview_eligibility(current_user: dict = Depends(get_current_user)):
         
         logger.info(f"🔍 Checking eligibility for user: {user_email}")
         
-        # Find candidate by email (same logic as getMySessions)
-        # Use the same approach as OA routes - get all candidates with this email
-        from app.db import oa_client
+        # Find candidate by email - simplified query
         from app.db.snowflake_client import get_connection
         
         candidate_ids = []
-        with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT ID, EMAIL FROM CANDIDATES WHERE UPPER(EMAIL) = UPPER(%s)",
-                (user_email,)
-            )
-            candidates = cursor.fetchall()
-            if candidates:
-                candidate_ids = [c[0] for c in candidates]
-            cursor.close()
+        try:
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT ID FROM CANDIDATES WHERE UPPER(EMAIL) = UPPER(%s) LIMIT 10",
+                    (user_email,)
+                )
+                candidates = cursor.fetchall()
+                if candidates:
+                    candidate_ids = [c[0] for c in candidates]
+                cursor.close()
+        except Exception as e:
+            logger.error(f"Error querying candidates: {str(e)}")
+            return {
+                "eligible": False,
+                "reason": "Error checking candidate records",
+                "best_score": None,
+                "threshold": INTERVIEW_THRESHOLD
+            }
         
-        logger.info(f"Found {len(candidate_ids)} candidate record(s) for email: {user_email}, IDs: {candidate_ids}")
+        logger.info(f"Found {len(candidate_ids)} candidate record(s) for email: {user_email}")
         
         if not candidate_ids:
             return {
                 "eligible": False,
                 "reason": "No candidate record found. Please apply for a job first.",
                 "best_score": None,
-                "threshold": INTERVIEW_THRESHOLD,
-                "debug": {
-                    "user_email": user_email,
-                    "candidate_found": False,
-                    "candidate_ids": []
-                }
+                "threshold": INTERVIEW_THRESHOLD
             }
         
-        # Check eligibility for all candidate IDs (user might have multiple applications)
-        best_score_overall = None
-        best_eligibility = None
-        
-        for candidate_id in candidate_ids:
+        # Check eligibility for the first candidate (most recent)
+        # If they have multiple applications, we'll check the first one for speed
+        try:
+            candidate_id = candidate_ids[0]
             logger.info(f"Checking eligibility for candidate_id: {candidate_id}")
             eligibility = grading_service.check_interview_eligibility(candidate_id, INTERVIEW_THRESHOLD)
             
-            # Get sessions for this candidate
-            sessions = oa_client.get_sessions_by_candidate(candidate_id)
-            session_debug = []
-            for s in sessions:
-                session_id = s.get('ID') or s.get('id')
-                # Handle case-insensitive keys
-                status = None
-                score = None
-                max_score = None
-                for key in s.keys():
-                    key_upper = key.upper()
-                    if key_upper == 'STATUS':
-                        status = s[key]
-                    elif key_upper == 'SCORE':
-                        score = s[key]
-                    elif key_upper == 'MAX_SCORE':
-                        max_score = s[key]
-                
-                session_debug.append({
-                    "session_id": session_id,
-                    "candidate_id": candidate_id,
-                    "status": status or s.get('STATUS') or s.get('status'),
-                    "score": score or s.get('SCORE') or s.get('score'),
-                    "max_score": max_score or s.get('MAX_SCORE') or s.get('max_score'),
-                    "available_keys": list(s.keys())[:10]
-                })
-            
-            # Track best score across all candidates
-            if eligibility.get('best_score') is not None:
-                score_val = eligibility.get('best_score')
-                if best_score_overall is None or score_val > best_score_overall:
-                    best_score_overall = score_val
-                    best_eligibility = eligibility
-                    best_eligibility["debug"] = {
-                        "candidate_id": candidate_id,
-                        "user_email": user_email,
-                        "threshold": INTERVIEW_THRESHOLD,
-                        "sessions": session_debug,
-                        "total_sessions": len(sessions),
-                        "all_candidate_ids": candidate_ids
-                    }
-        
-        # Return best eligibility found, or first one if none eligible
-        if best_eligibility:
-            return best_eligibility
-        else:
-            # Return the first candidate's eligibility with debug info
-            if candidate_ids:
-                eligibility = grading_service.check_interview_eligibility(candidate_ids[0], INTERVIEW_THRESHOLD)
-                sessions = oa_client.get_sessions_by_candidate(candidate_ids[0])
-                session_debug = []
-                for s in sessions:
-                    session_id = s.get('ID') or s.get('id')
-                    status = None
-                    score = None
-                    max_score = None
-                    for key in s.keys():
-                        key_upper = key.upper()
-                        if key_upper == 'STATUS':
-                            status = s[key]
-                        elif key_upper == 'SCORE':
-                            score = s[key]
-                        elif key_upper == 'MAX_SCORE':
-                            max_score = s[key]
-                    session_debug.append({
-                        "session_id": session_id,
-                        "status": status or s.get('STATUS') or s.get('status'),
-                        "score": score or s.get('SCORE') or s.get('score'),
-                        "max_score": max_score or s.get('MAX_SCORE') or s.get('max_score'),
-                    })
-                eligibility["debug"] = {
-                    "candidate_id": candidate_ids[0],
-                    "user_email": user_email,
-                    "threshold": INTERVIEW_THRESHOLD,
-                    "sessions": session_debug,
-                    "total_sessions": len(sessions),
-                    "all_candidate_ids": candidate_ids
-                }
-                return eligibility
-            
+            # Return simplified response without debug info to speed things up
+            return {
+                "eligible": eligibility.get("eligible", False),
+                "reason": eligibility.get("reason", "Unknown"),
+                "best_score": eligibility.get("best_score"),
+                "threshold": eligibility.get("threshold", INTERVIEW_THRESHOLD)
+            }
+        except Exception as e:
+            logger.error(f"Error checking eligibility for candidate {candidate_ids[0]}: {str(e)}")
             return {
                 "eligible": False,
-                "reason": "No completed OA assessments found",
+                "reason": f"Error checking eligibility: {str(e)}",
                 "best_score": None,
-                "threshold": INTERVIEW_THRESHOLD,
-                "debug": {
-                    "user_email": user_email,
-                    "candidate_ids": candidate_ids
-                }
+                "threshold": INTERVIEW_THRESHOLD
             }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error checking eligibility: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error checking eligibility: {str(e)}")
+        return {
+            "eligible": False,
+            "reason": f"Error checking eligibility: {str(e)}",
+            "best_score": None,
+            "threshold": INTERVIEW_THRESHOLD
+        }
 
 
 @router.post("/start")

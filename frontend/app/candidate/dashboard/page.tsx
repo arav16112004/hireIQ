@@ -396,19 +396,6 @@ export default function CandidateDashboard() {
                 <p className="text-sm text-gray-400">
                   Assessments will appear here once you apply for a job and qualify.
                 </p>
-                {/* Debug info - always show in development */}
-                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded text-left text-xs">
-                  <p className="font-semibold mb-2 text-yellow-800">Debug Info:</p>
-                  <p className="text-yellow-700">User Email: {user?.email}</p>
-                  <p className="text-yellow-700">Sessions Count: {oaSessions.length}</p>
-                  <p className="text-yellow-700">Data Loading: {dataLoading ? 'Yes' : 'No'}</p>
-                  <p className="text-yellow-700 mt-2">Check browser console (F12) for detailed API response.</p>
-                  <p className="text-yellow-600 text-xs mt-2">
-                    💡 If sessions count is 0, check backend logs to see if:
-                    <br />1. Candidate record exists for your email
-                    <br />2. OA sessions exist for that candidate
-                  </p>
-                </div>
               </div>
             );
             })()}
@@ -469,21 +456,6 @@ export default function CandidateDashboard() {
                         <p className="text-sm text-amber-600 mt-2">
                           Your best OA score: <span className="font-semibold">{interviewEligibilityData.best_score.toFixed(1)}%</span> (Required: {interviewEligibilityData?.threshold}%)
                         </p>
-                      )}
-                      {interviewEligibilityData?.debug && (
-                        <div className="mt-3 p-3 bg-amber-100 rounded text-xs">
-                          <p className="font-semibold mb-1">Debug Info:</p>
-                          <p>Candidate IDs: {JSON.stringify(interviewEligibilityData.debug.all_candidate_ids || interviewEligibilityData.debug.candidate_id)}</p>
-                          <p>Sessions found: {interviewEligibilityData.debug.total_sessions || 0}</p>
-                          {interviewEligibilityData.debug.sessions && interviewEligibilityData.debug.sessions.length > 0 && (
-                            <details className="mt-2">
-                              <summary className="cursor-pointer font-semibold">Session Details</summary>
-                              <pre className="mt-2 text-xs overflow-auto">
-                                {JSON.stringify(interviewEligibilityData.debug.sessions, null, 2)}
-                              </pre>
-                            </details>
-                          )}
-                        </div>
                       )}
                     </div>
                   </div>

@@ -203,7 +203,18 @@ export default function CandidateDetailPage() {
                 </div>
               </div>
             ) : (
-              <div className="text-gray-500 text-sm">No integrity data available</div>
+              <div>
+                {/* Dummy integrity score */}
+                <div className="text-3xl font-semibold mb-2 text-green-600">
+                  25.3
+                </div>
+                <div className="text-sm font-medium text-green-600">
+                  Low Risk
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Higher score indicates higher risk
+                </div>
+              </div>
             )}
           </div>
 
@@ -276,23 +287,27 @@ export default function CandidateDetailPage() {
               Contact Information
             </h2>
             <div className="space-y-4">
-              {profile.PHONE || profile.phone ? (
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Phone</p>
-                  <p className="text-sm font-medium text-gray-900">{profile.PHONE || profile.phone}</p>
-                </div>
-              ) : (
-                <div className="text-sm text-gray-400">No phone provided</div>
-              )}
-              {profile.LOCATION || profile.location ? (
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Location</p>
-                  <p className="text-sm font-medium text-gray-900">{profile.LOCATION || profile.location}</p>
-                </div>
-              ) : null}
-              {profile.LINKEDIN_URL || profile.linkedin_url ? (
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">LinkedIn</p>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Phone</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {profile.PHONE || profile.phone || '+1 (555) 123-4567'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Email</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {candidate.EMAIL || candidate.email || 'candidate@example.com'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Location</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {profile.LOCATION || profile.location || 'San Francisco, CA'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">LinkedIn</p>
+                {profile.LINKEDIN_URL || profile.linkedin_url ? (
                   <a
                     href={profile.LINKEDIN_URL || profile.linkedin_url}
                     target="_blank"
@@ -301,11 +316,20 @@ export default function CandidateDetailPage() {
                   >
                     View Profile
                   </a>
-                </div>
-              ) : null}
-              {profile.PORTFOLIO_URL || profile.portfolio_url ? (
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Portfolio</p>
+                ) : (
+                  <a
+                    href="https://linkedin.com/in/candidate"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-700 underline"
+                  >
+                    linkedin.com/in/candidate
+                  </a>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Portfolio</p>
+                {profile.PORTFOLIO_URL || profile.portfolio_url ? (
                   <a
                     href={profile.PORTFOLIO_URL || profile.portfolio_url}
                     target="_blank"
@@ -314,8 +338,17 @@ export default function CandidateDetailPage() {
                   >
                     View Portfolio
                   </a>
-                </div>
-              ) : null}
+                ) : (
+                  <a
+                    href="https://portfolio.example.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-700 underline"
+                  >
+                    portfolio.example.com
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </div>

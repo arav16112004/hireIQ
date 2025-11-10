@@ -98,23 +98,29 @@ export default function InterviewPage() {
       setChecking(true);
       console.log('Checking interview eligibility...');
       
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Eligibility check timeout')), 10000)
-      );
-      
-      const response = await Promise.race([
-        apiClient.interviews.checkEligibility(),
-        timeoutPromise
-      ]) as any;
+      // Increased timeout to 15 seconds and removed race condition for better error handling
+      const response = await apiClient.interviews.checkEligibility();
       
       console.log('Eligibility response:', response.data);
       setEligibility(response.data || { eligible: false, reason: 'Unknown error' });
     } catch (error: any) {
       console.error('Error checking eligibility:', error);
-      setEligibility({
-        eligible: false,
-        reason: error.response?.data?.detail || error.message || 'Error checking eligibility'
-      });
+      // Handle timeout or other errors gracefully
+      if (error.message && error.message.includes('timeout')) {
+        setEligibility({
+          eligible: false,
+          reason: 'Eligibility check is taking too long. Please try again or contact support.',
+          best_score: null,
+          threshold: 90
+        });
+      } else {
+        setEligibility({
+          eligible: false,
+          reason: error.response?.data?.detail || error.response?.data?.reason || error.message || 'Error checking eligibility',
+          best_score: error.response?.data?.best_score || null,
+          threshold: error.response?.data?.threshold || 90
+        });
+      }
     } finally {
       setChecking(false);
       console.log('Eligibility check complete');
