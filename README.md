@@ -1,4 +1,4 @@
-# SeroHire — AI-Driven Hiring Platform
+# HireIQ — AI-Driven Hiring Platform
 
 > End-to-end hiring pipeline that takes a candidate from **resume upload → AI fit-screening → emailed online coding assessment with browser-native proctoring → AI video interview**, all in one app.
 
@@ -45,13 +45,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Candidate / Recruiter                     │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
 │            Next.js 15 (App Router) — frontend/                  │
-│  • Candidate / Recruiter / Admin portals                        │
 │  • Monaco editor + split-pane OA UI                             │
 │  • WebGazer.js gaze tracking (6-pt calibration, 10 Hz scoring)  │
 └─────────────────────────────────────────────────────────────────┘
@@ -201,7 +195,7 @@ SNOWFLAKE_WAREHOUSE=TEAM_SERO_WH
 
 # Email
 SENDGRID_API_KEY=...
-SENDGRID_FROM_EMAIL=noreply@serohire.tech
+SENDGRID_FROM_EMAIL=noreply@hireiq.tech
 
 # Gemini
 GEMINI_API_KEY=...
