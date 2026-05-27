@@ -370,8 +370,3 @@ A 100% client-side proctoring system powered by WebGazer.js — **no server-side
 - [ ] Webhook-based SendGrid open/click tracking
 - [ ] Containerized self-hosted Judge0 for production
 
----
-
-## License
-
-Proprietary — all rights reserved. Reach out via the production domain for licensing inquiries.
